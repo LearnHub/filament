@@ -53,6 +53,7 @@ struct App {
     MaterialProvider* materials;
     MaterialSource materialSource = GENERATE_SHADERS;
     bool actualSize = false;
+    gltfio::ResourceLoader* resourceLoader = nullptr;
 };
 
 static const char* DEFAULT_IBL = "venetian_crossroads_2k";
@@ -199,11 +200,12 @@ int main(int argc, char** argv) {
         configuration.gltfPath = filename.getAbsolutePath();
         configuration.normalizeSkinningWeights = true;
         configuration.recomputeBoundingBoxes = false;
-        gltfio::ResourceLoader(configuration).loadResources(app.asset);
+        app.resourceLoader = new gltfio::ResourceLoader(configuration);
+        app.resourceLoader->asyncBeginLoad(app.asset);
 
         // Load animation data then free the source hierarchy.
         app.asset->getAnimator();
-        app.asset->releaseSourceData();
+//      app.asset->releaseSourceData();
 
         // Add the renderables to the scene.
         app.viewer->setAsset(app.asset, !app.actualSize);
@@ -253,6 +255,7 @@ int main(int argc, char** argv) {
     };
 
     auto animate = [&app](Engine* engine, View* view, double now) {
+        app.resourceLoader->asyncUpdateLoad();
         app.viewer->applyAnimation(now);
     };
 

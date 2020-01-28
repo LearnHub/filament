@@ -47,10 +47,37 @@ using namespace utils;
 
 static const auto FREE_CALLBACK = [](void* mem, size_t, void*) { free(mem); };
 
+namespace {
+
+    struct TextureCacheEntry {
+        Texture* texture;
+        stbi_uc* texels;
+    };
+
+    using BufferTextureCache = tsl::robin_map<const void*, std::unique_ptr<TextureCacheEntry>>;
+    using UrlTextureCache = tsl::robin_map<std::string, std::unique_ptr<TextureCacheEntry>>;
+
+    // The resource loader's transient texture cache holds decoded texture data during loadResources().
+    // It is discarded when all Filament Texture objects have been created and uploaded. The "texels"
+    // pointers are populated from secondary threads that have been spawned by the job system. Since
+    // multiple glTF textures might be loaded from a single URL or buffer pointer, the cache
+    // prevents needless re-decoding. The cache is composed of two maps, one with URL string keys
+    // and one with pointer keys, depending on the origin of the texture data (buffers or URLs).
+    struct TextureCache {
+        BufferTextureCache bufferTextureCache;
+        UrlTextureCache urlTextureCache;
+        int numRequiredTextures = 0;
+        std::atomic<int> numFinishedTextures;
+    };
+
+}
+
 namespace gltfio {
 
 struct ResourceLoader::Impl {
     tsl::robin_map<std::string, BufferDescriptor> mUserCache;
+    TextureCache mTextureCache;
+    utils::JobSystem::Job* mDecodingJob = nullptr;
 };
 
 namespace details {
@@ -133,6 +160,10 @@ static void generateTrivialIndices(uint32_t* dst, size_t numVertices) {
 }
 
 bool ResourceLoader::loadResources(FilamentAsset* asset) {
+    return loadResources(asset, false);
+}
+
+bool ResourceLoader::loadResources(FilamentAsset* asset, bool async) {
     FFilamentAsset* fasset = upcast(asset);
     if (fasset->mResourcesLoaded) {
         return false;
@@ -288,10 +319,23 @@ bool ResourceLoader::loadResources(FilamentAsset* asset) {
     }
 
     // Finally, load image files and create Filament Textures.
-    return createTextures(fasset);
+    return createTextures(fasset, async);
 }
 
-bool ResourceLoader::createTextures(details::FFilamentAsset* asset) const {
+bool ResourceLoader::asyncBeginLoad(FilamentAsset* asset) {
+    return loadResources(asset, true);
+}
+
+float ResourceLoader::asyncGetLoadProgress() const {
+    // TODO
+    return 0.0f;
+}
+
+void ResourceLoader::asyncUpdateLoad() {
+    // TODO
+}
+
+bool ResourceLoader::createTextures(details::FFilamentAsset* asset, bool async) const {
     // Define a simple functor that creates a Filament Texture.
     // TODO: this could be optimized, e.g. do not generate mips if never mipmap-sampled, and use a
     // more compact format when possible.
@@ -306,16 +350,8 @@ bool ResourceLoader::createTextures(details::FFilamentAsset* asset) const {
         return tex;
     };
 
-    // Multiple glTF textures might be loaded from the same URL or buffer pointer, so we prevent
-    // needless re-decoding with a cache of Filament Texture objects composed of two maps, where
-    // the map keys are URL strings or source data pointers.
-
-    struct TextureCacheEntry {
-        Texture* texture;
-        stbi_uc* texels;
-    };
-    tsl::robin_map<const void*, std::unique_ptr<TextureCacheEntry>> bufTextureCache;
-    tsl::robin_map<std::string, std::unique_ptr<TextureCacheEntry>> urlTextureCache;
+    BufferTextureCache& bufTextureCache = pImpl->mTextureCache.bufferTextureCache;
+    UrlTextureCache& urlTextureCache = pImpl->mTextureCache.urlTextureCache;
 
     // The following loop does a fair bit of synchronous work but it offloads the actual PNG / JPEG
     // decoding into the job system. Synchronously, it invokes stbi_info() over each image, creates
@@ -346,7 +382,9 @@ bool ResourceLoader::createTextures(details::FFilamentAsset* asset) const {
                 utils::JobSystem::Job* decode = utils::jobs::createJob(*js, parent, [=] {
                     int width, height, comp;
                     cacheEntry->texels = stbi_load_from_memory(sourceData, tb.totalSize, &width, &height, &comp, 4);
+                    pImpl->mTextureCache.numFinishedTextures++;
                 });
+                pImpl->mTextureCache.numRequiredTextures++;
                 js->run(decode);
             }
 
@@ -373,7 +411,9 @@ bool ResourceLoader::createTextures(details::FFilamentAsset* asset) const {
                 utils::JobSystem::Job* decode = utils::jobs::createJob(*js, parent, [=] {
                     int width, height, comp;
                     cacheEntry->texels = stbi_load_from_memory(sourceData, iter->second.size, &width, &height, &comp, 4);
+                    pImpl->mTextureCache.numFinishedTextures++;
                 });
+                pImpl->mTextureCache.numRequiredTextures++;
                 js->run(decode);
             }
         } else {
@@ -386,7 +426,9 @@ bool ResourceLoader::createTextures(details::FFilamentAsset* asset) const {
                     utils::JobSystem::Job* decode = utils::jobs::createJob(*js, parent, [=] {
                         int width, height, comp;
                         cacheEntry->texels = stbi_load(fullpath.c_str(), &width, &height, &comp, 4);
+                        pImpl->mTextureCache.numFinishedTextures++;
                     });
+                    pImpl->mTextureCache.numRequiredTextures++;
                     js->run(decode);
                 }
             #endif
@@ -394,6 +436,11 @@ bool ResourceLoader::createTextures(details::FFilamentAsset* asset) const {
 
         cacheEntry->texture = createTexture(width, height, tb.srgb);
         tb.materialInstance->setParameter(tb.materialParameter, cacheEntry->texture, tb.sampler);
+    }
+
+    if (async) {
+        pImpl->mDecodingJob = js->runAndRetain(parent);
+        return true;
     }
 
     js->runAndWait(parent);

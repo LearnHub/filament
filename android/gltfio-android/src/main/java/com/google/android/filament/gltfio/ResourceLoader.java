@@ -82,6 +82,8 @@ public class ResourceLoader {
      * <p>This is the main entry point for <code>ResourceLoader</code>, and only needs to be called
      * once.</p>
      *
+     * NOTE: this is a synchronous API, please see [asyncBeginLoad] as an alternative.
+     *
      * @param asset the Filament asset that contains URI-based resources
      * @return self (for daisy chaining)
      */
@@ -91,9 +93,24 @@ public class ResourceLoader {
         return this;
     }
 
+    public void asyncBeginLoad(@NonNull FilamentAsset asset) {
+        nAsyncBeginLoad(mNativeObject, asset.getNativeObject());
+    }
+
+    public float asyncGetLoadProgress() {
+        return nAsyncGetLoadProgress(mNativeObject);
+    }
+
+    public void asyncUpdateLoad() {
+        nAsyncUpdateLoad(mNativeObject);
+    }
+
     private static native long nCreateResourceLoader(long nativeEngine);
     private static native void nDestroyResourceLoader(long nativeLoader);
     private static native void nAddResourceData(long nativeLoader, String url, Buffer buffer,
             int remaining);
     private static native void nLoadResources(long nativeLoader, long nativeAsset);
+    private static native void nAsyncBeginLoad(long nativeLoader, long nativeAsset);
+    private static native float nAsyncGetLoadProgress(long nativeLoader);
+    private static native void nAsyncUpdateLoad(long nativeLoader);
 }

@@ -69,6 +69,7 @@ class ModelViewer {
     private val renderer: Renderer
     private var swapChain: SwapChain? = null
     private var assetLoader: AssetLoader
+    private var resourceLoader: ResourceLoader
 
     private val eyePos = DoubleArray(3)
     private val target = DoubleArray(3)
@@ -140,12 +141,10 @@ class ModelViewer {
         destroyModel()
         asset = assetLoader.createAssetFromJson(buffer)
         asset?.let { asset ->
-            val resourceLoader = ResourceLoader(engine)
-            resourceLoader.loadResources(asset)
-            resourceLoader.destroy()
-            animator = asset.animator
-            asset.releaseSourceData()
             scene.addEntities(asset.entities)
+            resourceLoader = ResourceLoader(engine)
+            animator = asset.animator
+            resourceLoader.asyncBeginLoad(asset)
         }
     }
 
@@ -156,15 +155,13 @@ class ModelViewer {
         destroyModel()
         asset = assetLoader.createAssetFromJson(buffer)
         asset?.let { asset ->
-            val resourceLoader = ResourceLoader(engine)
+            scene.addEntities(asset.entities)
+            resourceLoader = ResourceLoader(engine)
             for (uri in asset.resourceUris) {
                 resourceLoader.addResourceData(uri, callback(uri))
             }
-            resourceLoader.loadResources(asset)
-            resourceLoader.destroy()
             animator = asset.animator
-            asset.releaseSourceData()
-            scene.addEntities(asset.entities)
+            resourceLoader.asyncBeginLoad(asset)
         }
     }
 
@@ -201,6 +198,16 @@ class ModelViewer {
     fun render() {
         if (!uiHelper.isReadyToRender) {
             return
+        }
+
+        // Ping the resource loader in case textures are still being decoded.
+        resourceLoader?.let { loader ->
+            loader.asyncUpdateLoad();
+            if (loader.asyncCheckLoad() == 1f) {
+                loader.destroy()
+                resourceLoader = null
+                asset.releaseSourceData()
+            }
         }
 
         cameraManipulator.getLookAt(eyePos, target, upward)

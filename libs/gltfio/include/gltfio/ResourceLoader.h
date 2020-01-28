@@ -79,23 +79,33 @@ public:
     ~ResourceLoader();
 
     /**
+     * Adds raw resource data into a cache for platforms that do not have filesystem or network
+     * access.
+     */
+    void addResourceData(std::string url, BufferDescriptor&& buffer);
+
+    /**
      * Loads resources for the given asset from the filesystem or data cache and "finalizes" the
      * asset by transforming the vertex data format if necessary, decoding image files, supplying
      * tangent data, etc.
      *
      * Returns false if resources have already been loaded, or if one or more resources could not
      * be loaded.
+     *
+     * Note: this method is synchronous and blocks until all textures have been decoded.
+     * For asynchronous behavior, see asyncBeginLoad.
      */
     bool loadResources(FilamentAsset* asset);
 
-    /**
-     * Adds raw resource data into a cache for platforms that do not have filesystem or network
-     * access.
-     */
-    void addResourceData(std::string url, BufferDescriptor&& buffer);
+    bool asyncBeginLoad(FilamentAsset* asset);
+
+    float asyncGetLoadProgress() const;
+
+    void asyncUpdateLoad();
 
 private:
-    bool createTextures(details::FFilamentAsset* asset) const;
+    bool loadResources(FilamentAsset* asset, bool async);
+    bool createTextures(details::FFilamentAsset* asset, bool async) const;
     void applySparseData(details::FFilamentAsset* asset) const;
     void computeTangents(details::FFilamentAsset* asset) const;
     void normalizeSkinningWeights(details::FFilamentAsset* asset) const;
