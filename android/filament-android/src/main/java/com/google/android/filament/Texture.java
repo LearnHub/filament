@@ -603,6 +603,17 @@ public class Texture {
         }
 
         /**
+         * Specifies a texture to use rather than create a new one
+         * @param id the native OpenGL texture ID. Must be created in a shared context with Filament
+         * @return This Builder, for chaining calls.
+         */
+        @NonNull
+        public Builder importShared(int id) {
+            nBuilderImport(mNativeBuilder, id);
+            return this;
+        }
+
+        /**
          * Specifies the type of sampler to use.
          * @param target {@link Sampler Sampler} type
          * @return This Builder, for chaining calls.
@@ -1051,6 +1062,7 @@ public class Texture {
     private static native void nBuilderHeight(long nativeBuilder, int height);
     private static native void nBuilderDepth(long nativeBuilder, int depth);
     private static native void nBuilderLevels(long nativeBuilder, int levels);
+    private static native void nBuilderImport(long nativeBuilder, int id);
     private static native void nBuilderSampler(long nativeBuilder, int sampler);
     private static native void nBuilderFormat(long nativeBuilder, int format);
     private static native void nBuilderUsage(long nativeBuilder, int flags);
