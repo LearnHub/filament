@@ -355,6 +355,7 @@ static void setup(Engine* engine, View* view, Scene* scene) {
         Material* shadowMaterial = Material::Builder()
                 .package(RESOURCES_GROUNDSHADOW_DATA, RESOURCES_GROUNDSHADOW_SIZE)
                 .build(*engine);
+        shadowMaterial->setDefaultParameter("strength", 0.7f);
 
         const static uint32_t indices[] = {
                 0, 1, 2, 2, 3, 0
@@ -370,7 +371,8 @@ static void setup(Engine* engine, View* view, Scene* scene) {
         short4 tbn = filament::math::packSnorm16(
                 mat3f::packTangentFrame(
                         filament::math::mat3f{
-                                float3{ 1.0f, 0.0f, 0.0f }, float3{ 0.0f, 0.0f, 1.0f },
+                                float3{ 1.0f, 0.0f, 0.0f },
+                                float3{ 0.0f, 0.0f, 1.0f },
                                 float3{ 0.0f, 1.0f, 0.0f }
                         }
                 ).xyzw);

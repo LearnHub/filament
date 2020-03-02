@@ -60,8 +60,8 @@ TEST(FrameGraphTest, SimpleRenderPass) {
                 renderPassExecuted = true;
                 auto const& rt = resources.getRenderTarget(data.rt);
                 EXPECT_TRUE(rt.target);
-                EXPECT_EQ(TargetBufferFlags::ALL, rt.params.flags.discardStart);
-                EXPECT_EQ(TargetBufferFlags::DEPTH_AND_STENCIL, rt.params.flags.discardEnd);
+                EXPECT_EQ(TargetBufferFlags::COLOR, rt.params.flags.discardStart);
+                EXPECT_EQ(TargetBufferFlags::NONE, rt.params.flags.discardEnd);
 
             });
 
@@ -98,10 +98,10 @@ TEST(FrameGraphTest, SimpleRenderPass2) {
 
                 data.outColor = builder.write(builder.read(data.outColor));
                 data.outDepth = builder.write(builder.read(data.outDepth));
-                data.rt = builder.createRenderTarget("rt", {
-                        .attachments.color = data.outColor,
-                        .attachments.depth = data.outDepth
-                });
+                FrameGraphRenderTarget::Descriptor renderTargetDescr;
+                renderTargetDescr.attachments.color = data.outColor;
+                renderTargetDescr.attachments.depth = data.outDepth;
+                data.rt = builder.createRenderTarget("rt", renderTargetDescr);
 
                 EXPECT_TRUE(fg.isValid(data.outColor));
                 EXPECT_TRUE(fg.isValid(data.outDepth));
@@ -113,8 +113,8 @@ TEST(FrameGraphTest, SimpleRenderPass2) {
                 renderPassExecuted = true;
                 auto const& rt = resources.getRenderTarget(data.rt);
                 EXPECT_TRUE(rt.target);
-                EXPECT_EQ(TargetBufferFlags::ALL, rt.params.flags.discardStart);
-                EXPECT_EQ(TargetBufferFlags::STENCIL, rt.params.flags.discardEnd);
+                EXPECT_EQ(TargetBufferFlags::COLOR_AND_DEPTH, rt.params.flags.discardStart);
+                EXPECT_EQ(TargetBufferFlags::NONE, rt.params.flags.discardEnd);
             });
 
     fg.present(renderPass.getData().outColor);
@@ -146,9 +146,9 @@ TEST(FrameGraphTest, ScenarioDepthPrePass) {
                 inputDesc.format = TextureFormat::DEPTH24;
                 data.outDepth = builder.createTexture("depth buffer", inputDesc);
                 data.outDepth = builder.write(builder.read(data.outDepth));
-                data.rt = builder.createRenderTarget("rt depth", {
-                        .attachments.depth = data.outDepth
-                });
+                FrameGraphRenderTarget::Descriptor renderTargetDescr;
+                renderTargetDescr.attachments.depth = data.outDepth;
+                data.rt = builder.createRenderTarget("rt depth", renderTargetDescr);
                 EXPECT_TRUE(fg.isValid(data.outDepth));
             },
             [=, &depthPrepassExecuted](
@@ -158,8 +158,8 @@ TEST(FrameGraphTest, ScenarioDepthPrePass) {
                 depthPrepassExecuted = true;
                 auto const& rt = resources.getRenderTarget(data.rt);
                 EXPECT_TRUE(rt.target);
-                EXPECT_EQ(TargetBufferFlags::ALL, rt.params.flags.discardStart);
-                EXPECT_EQ(TargetBufferFlags::COLOR_AND_STENCIL, rt.params.flags.discardEnd);
+                EXPECT_EQ(TargetBufferFlags::DEPTH, rt.params.flags.discardStart);
+                EXPECT_EQ(TargetBufferFlags::NONE, rt.params.flags.discardEnd);
             });
 
     struct ColorPassData {
@@ -179,10 +179,10 @@ TEST(FrameGraphTest, ScenarioDepthPrePass) {
 
                 data.outColor = builder.write(builder.read(data.outColor));
                 data.outDepth = builder.write(builder.read(data.outDepth));
-                data.rt = builder.createRenderTarget("rt color+depth", {
-                        .attachments.color = data.outColor,
-                        .attachments.depth = data.outDepth
-                });
+                FrameGraphRenderTarget::Descriptor renderTargetDescr;
+                renderTargetDescr.attachments.color = data.outColor;
+                renderTargetDescr.attachments.depth = data.outDepth;
+                data.rt = builder.createRenderTarget("rt color+depth", renderTargetDescr);
 
                 EXPECT_FALSE(fg.isValid(depthPrepass.getData().outDepth));
                 EXPECT_TRUE(fg.isValid(data.outColor));
@@ -195,8 +195,8 @@ TEST(FrameGraphTest, ScenarioDepthPrePass) {
                 colorPassExecuted = true;
                 auto const& rt = resources.getRenderTarget(data.rt);
                 EXPECT_TRUE(rt.target);
-                EXPECT_EQ(TargetBufferFlags::COLOR_AND_STENCIL, rt.params.flags.discardStart);
-                EXPECT_EQ(TargetBufferFlags::DEPTH_AND_STENCIL, rt.params.flags.discardEnd);
+                EXPECT_EQ(TargetBufferFlags::COLOR, rt.params.flags.discardStart);
+                EXPECT_EQ(TargetBufferFlags::DEPTH, rt.params.flags.discardEnd);
             });
 
     fg.present(colorPass.getData().outColor);
@@ -235,8 +235,8 @@ TEST(FrameGraphTest, SimplePassCulling) {
                 renderPassExecuted = true;
                 auto const& rt = resources.getRenderTarget(data.rt);
                 EXPECT_TRUE(rt.target);
-                EXPECT_EQ(TargetBufferFlags::ALL, rt.params.flags.discardStart);
-                EXPECT_EQ(TargetBufferFlags::DEPTH_AND_STENCIL, rt.params.flags.discardEnd);
+                EXPECT_EQ(TargetBufferFlags::COLOR, rt.params.flags.discardStart);
+                EXPECT_EQ(TargetBufferFlags::NONE, rt.params.flags.discardEnd);
             });
 
 
@@ -259,8 +259,8 @@ TEST(FrameGraphTest, SimplePassCulling) {
                 postProcessPassExecuted = true;
                 auto const& rt = resources.getRenderTarget(data.rt);
                 EXPECT_TRUE(rt.target);
-                EXPECT_EQ(TargetBufferFlags::ALL, rt.params.flags.discardStart);
-                EXPECT_EQ(TargetBufferFlags::DEPTH_AND_STENCIL, rt.params.flags.discardEnd);
+                EXPECT_EQ(TargetBufferFlags::COLOR, rt.params.flags.discardStart);
+                EXPECT_EQ(TargetBufferFlags::NONE, rt.params.flags.discardEnd);
             });
 
 
@@ -362,8 +362,8 @@ TEST(FrameGraphTest, RenderTargetLifetime) {
                 rt1 = rt.target;
                 EXPECT_TRUE(rt.target);
                 EXPECT_EQ(TargetBufferFlags::COLOR, rt.params.flags.clear);
-                EXPECT_EQ(TargetBufferFlags::ALL, rt.params.flags.discardStart);
-                EXPECT_EQ(TargetBufferFlags::DEPTH_AND_STENCIL, rt.params.flags.discardEnd);
+                EXPECT_EQ(TargetBufferFlags::COLOR, rt.params.flags.discardStart);
+                EXPECT_EQ(TargetBufferFlags::NONE, rt.params.flags.discardEnd);
             });
 
     auto& renderPass2 = fg.addPass<RenderPassData>("Render2",
@@ -381,8 +381,8 @@ TEST(FrameGraphTest, RenderTargetLifetime) {
                 EXPECT_TRUE(rt.target);
                 EXPECT_EQ(TargetBufferFlags::NONE, rt.params.flags.clear);
                 EXPECT_EQ(rt1.getId(), rt.target.getId());
-                EXPECT_EQ(TargetBufferFlags::DEPTH_AND_STENCIL, rt.params.flags.discardStart);
-                EXPECT_EQ(TargetBufferFlags::DEPTH_AND_STENCIL, rt.params.flags.discardEnd);
+                EXPECT_EQ(TargetBufferFlags::NONE, rt.params.flags.discardStart);
+                EXPECT_EQ(TargetBufferFlags::NONE, rt.params.flags.discardEnd);
 
             });
 

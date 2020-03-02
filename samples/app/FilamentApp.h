@@ -76,12 +76,14 @@ public:
     filament::Material const* getDefaultMaterial() const noexcept { return mDefaultMaterial; }
     filament::Material const* getTransparentMaterial() const noexcept { return mTransparentMaterial; }
     IBL* getIBL() const noexcept { return mIBL.get(); }
+    filament::Texture* getDirtTexture() const noexcept { return mDirt; }
     filament::View* getGuiView() const noexcept;
 
     void close() { mClosed = true; }
 
     void setSidebarWidth(int width) { mSidebarWidth = width; }
     void setWindowTitle(const char* title) { mWindowTitle = title; }
+    float& getCameraFocalLength() { return mCameraFocalLength; }
 
     void addOffscreenView(filament::View* view) { mOffscreenViews.push_back(view); }
 
@@ -199,10 +201,12 @@ private:
     void initSDL();
 
     void loadIBL(const Config& config);
+    void loadDirt(const Config& config);
 
     filament::Engine* mEngine = nullptr;
     filament::Scene* mScene = nullptr;
     std::unique_ptr<IBL> mIBL;
+    filament::Texture* mDirt = nullptr;
     bool mClosed = false;
     uint64_t mTime = 0;
 
@@ -217,6 +221,7 @@ private:
     size_t mSkippedFrames = 0;
     std::string mWindowTitle;
     std::vector<filament::View*> mOffscreenViews;
+    float mCameraFocalLength = 28.0f;
 };
 
 #endif // TNT_FILAMENT_SAMPLE_FILAMENTAPP_H

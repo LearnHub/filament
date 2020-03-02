@@ -41,7 +41,8 @@ import java.nio.Buffer
  * clients still have the responsibility of adding an [IndirectLight] and [Skybox] to the scene.
  * Additionally, clients should:
  *
- * 1. Call [onTouchEvent] from a touch handler.
+ * 1. Pass the model viewer into [SurfaceView.setOnTouchListener] or call its [onTouchEvent]
+ *    method from your touch handler.
  * 2. Call [render] and [Animator.applyAnimation] from a `Choreographer` frame callback.
  *
  * NOTE: if its associated SurfaceView or TextureView has become detached from its window, the
@@ -49,13 +50,17 @@ import java.nio.Buffer
  *
  * See `sample-gltf-viewer` for a usage example.
  */
-class ModelViewer {
+class ModelViewer : android.view.View.OnTouchListener {
 
     var asset: FilamentAsset? = null
         private set
 
     var animator: Animator? = null
         private set
+
+    @Suppress("unused")
+    val progress
+        get() = resourceLoader.asyncGetLoadProgress()
 
     val engine: Engine
     val scene: Scene
@@ -69,6 +74,8 @@ class ModelViewer {
     private val renderer: Renderer
     private var swapChain: SwapChain? = null
     private var assetLoader: AssetLoader
+    private var resourceLoader: ResourceLoader
+    private val readyRenderables = IntArray(128) // add up to 128 entities at a time
 
     private val eyePos = DoubleArray(3)
     private val target = DoubleArray(3)
@@ -91,6 +98,7 @@ class ModelViewer {
         view.camera = camera
 
         assetLoader = AssetLoader(engine, MaterialProvider(engine), EntityManager.get())
+        resourceLoader = ResourceLoader(engine)
 
         // Always add a direct light source since it is required for shadowing.
         // We highly recommend adding an indirect light as well.
@@ -140,12 +148,9 @@ class ModelViewer {
         destroyModel()
         asset = assetLoader.createAssetFromJson(buffer)
         asset?.let { asset ->
-            val resourceLoader = ResourceLoader(engine)
-            resourceLoader.loadResources(asset)
-            resourceLoader.destroy()
+            resourceLoader.asyncBeginLoad(asset)
             animator = asset.animator
             asset.releaseSourceData()
-            scene.addEntities(asset.entities)
         }
     }
 
@@ -156,15 +161,12 @@ class ModelViewer {
         destroyModel()
         asset = assetLoader.createAssetFromJson(buffer)
         asset?.let { asset ->
-            val resourceLoader = ResourceLoader(engine)
             for (uri in asset.resourceUris) {
                 resourceLoader.addResourceData(uri, callback(uri))
             }
-            resourceLoader.loadResources(asset)
-            resourceLoader.destroy()
+            resourceLoader.asyncBeginLoad(asset)
             animator = asset.animator
             asset.releaseSourceData()
-            scene.addEntities(asset.entities)
         }
     }
 
@@ -203,15 +205,31 @@ class ModelViewer {
             return
         }
 
+        // Allow the resource loader to finalize textures that have become ready.
+        resourceLoader.asyncUpdateLoad()
+
+        // Add renderable entities to the scene as they become ready.
+        asset?.let { populateScene(it) }
+
+        // Extract the camera basis from the helper and push it to the Filament camera.
         cameraManipulator.getLookAt(eyePos, target, upward)
         camera.lookAt(
                 eyePos[0], eyePos[1], eyePos[2],
                 target[0], target[1], target[2],
                 upward[0], upward[1], upward[2])
 
+        // Render the scene, unless the renderer wants to skip the frame.
         if (renderer.beginFrame(swapChain!!)) {
             renderer.render(view)
             renderer.endFrame()
+        }
+    }
+
+    private fun populateScene(asset: FilamentAsset) {
+        var count = 0
+        val popRenderables = {count = asset.popRenderables(readyRenderables); count != 0}
+        while (popRenderables()) {
+            scene.addEntities(readyRenderables.take(count).toIntArray())
         }
     }
 
@@ -223,6 +241,7 @@ class ModelViewer {
 
                 destroyModel()
                 assetLoader.destroy()
+                resourceLoader.destroy()
 
                 engine.destroyEntity(light)
                 engine.destroyRenderer(renderer)
@@ -242,6 +261,12 @@ class ModelViewer {
      */
     fun onTouchEvent(event: MotionEvent) {
         gestureDetector.onTouchEvent(event)
+    }
+
+    @SuppressWarnings("ClickableViewAccessibility")
+    override fun onTouch(view: android.view.View, event: MotionEvent): Boolean {
+        onTouchEvent(event)
+        return true
     }
 
     inner class SurfaceCallback : UiHelper.RendererCallback {

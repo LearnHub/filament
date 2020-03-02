@@ -56,6 +56,40 @@ class FMaterialInstance;
 class FRenderer;
 class FScene;
 
+// The value of the 'VISIBLE_MASK' after culling. Each bit represents visibility in a frustum
+// (either camera or light).
+//
+// bits                          7 6 5 4 3 2 1 0
+// +-------------------------------------------+
+// VISIBLE_RENDERABLE                          X
+// VISIBLE_DIR_SHADOW_CASTER                 X
+// VISIBLE_SPOT_SHADOW_CASTER_0            X
+// VISIBLE_SPOT_SHADOW_CASTER_1          X
+// ...
+
+static constexpr size_t VISIBLE_RENDERABLE_BIT = 0u;
+static constexpr size_t VISIBLE_DIR_SHADOW_CASTER_BIT = 1u;
+static constexpr size_t VISIBLE_SPOT_SHADOW_CASTER_N_BIT(size_t n) { return n + 2; }
+
+static constexpr uint8_t VISIBLE_RENDERABLE = 1u << VISIBLE_RENDERABLE_BIT;
+static constexpr uint8_t VISIBLE_DIR_SHADOW_CASTER = 1u << VISIBLE_DIR_SHADOW_CASTER_BIT;
+static constexpr uint8_t VISIBLE_SPOT_SHADOW_CASTER_N(size_t n) {
+    return 1u << VISIBLE_SPOT_SHADOW_CASTER_N_BIT(n);
+}
+
+// ORing of all the VISIBLE_SPOT_SHADOW_CASTER bits
+static constexpr uint8_t VISIBLE_SPOT_SHADOW_CASTER =
+        (0xFF >> (sizeof(uint8_t) * 8u - CONFIG_MAX_SHADOW_CASTING_SPOTS)) << 2u;
+
+static constexpr uint8_t VISIBLE_ALL = VISIBLE_RENDERABLE | VISIBLE_DIR_SHADOW_CASTER;
+
+// Because we're using a uint8_t for the visibility mask, we're limited to 6 spot light shadows.
+// (2 of the bits are used for visible renderables + directional light shadow casters).
+static_assert(CONFIG_MAX_SHADOW_CASTING_SPOTS <= 6,
+        "CONFIG_MAX_SHADOW_CASTING_SPOTS cannot be higher than 6.");
+
+// ------------------------------------------------------------------------------------------------
+
 class FView : public View {
 public:
     using Range = utils::Range<uint32_t>;
@@ -128,6 +162,8 @@ public:
             ArenaScope& arena, Viewport const& viewport) noexcept;
     void prepareSSAO(backend::Handle<backend::HwTexture> ssao) const noexcept;
     void cleanupSSAO() const noexcept;
+    void prepareSSR(backend::Handle<backend::HwTexture> ssr, float refractionLodOffset) const noexcept;
+    void cleanupSSR() const noexcept;
     void froxelize(FEngine& engine) const noexcept;
     void commitUniforms(backend::DriverApi& driver) const noexcept;
     void commitFroxels(backend::DriverApi& driverApi) const noexcept;
@@ -222,22 +258,6 @@ public:
         mHasPostProcessPass = enabled;
     }
 
-    void setDepthPrepass(DepthPrepass prepass) noexcept {
-#ifdef __EMSCRIPTEN__
-        if (prepass == View::DepthPrepass::ENABLED) {
-            utils::slog.w << "WARNING: " <<
-                "Depth prepass cannot be enabled on web due to invariance requirements." <<
-                utils::io::endl;
-            return;
-        }
-#endif
-        mDepthPrepass = prepass;
-    }
-
-    DepthPrepass getDepthPrepass() const noexcept {
-        return mDepthPrepass;
-    }
-
     void setAmbientOcclusion(AmbientOcclusion ambientOcclusion) noexcept {
         mAmbientOcclusion = ambientOcclusion;
     }
@@ -246,15 +266,27 @@ public:
         return mAmbientOcclusion;
     }
 
-    void setAmbientOcclusionOptions(AmbientOcclusionOptions const& options) noexcept {
+    void setAmbientOcclusionOptions(AmbientOcclusionOptions options) noexcept {
+        options.radius = math::max(0.0f, options.radius);
+        options.bias = math::clamp(0.0f, 0.1f, options.bias);
+        options.power = std::max(0.0f, options.power);
+        options.resolution = math::clamp(0.0f, 1.0f, options.resolution);
+        options.intensity = std::max(0.0f, options.intensity);
         mAmbientOcclusionOptions = options;
-        mAmbientOcclusionOptions.radius = math::clamp(0.0f, 10.0f, mAmbientOcclusionOptions.radius);
-        mAmbientOcclusionOptions.bias = math::clamp(0.0f, 0.1f, mAmbientOcclusionOptions.bias);
-        mAmbientOcclusionOptions.power = math::clamp(0.0f, 1.0f, mAmbientOcclusionOptions.power);
     }
 
     AmbientOcclusionOptions const& getAmbientOcclusionOptions() const noexcept {
         return mAmbientOcclusionOptions;
+    }
+
+    void setBloomOptions(BloomOptions options) noexcept {
+        options.dirtStrength = math::saturate(options.dirtStrength);
+        options.levels = math::clamp(options.levels, uint8_t(3), uint8_t(12));
+        mBloomOptions = options;
+    }
+
+    BloomOptions getBloomOptions() const noexcept {
+        return mBloomOptions;
     }
 
     Range const& getVisibleRenderables() const noexcept {
@@ -265,14 +297,15 @@ public:
         return mVisibleShadowCasters;
     }
 
-    uint8_t getClearFlags() const noexcept {
-        uint8_t clearFlags = 0;
-        if (getClearTargetColor())     clearFlags |= (uint8_t)TargetBufferFlags::COLOR;
-        if (getClearTargetDepth())     clearFlags |= (uint8_t)TargetBufferFlags::DEPTH;
-        if (getClearTargetStencil())   clearFlags |= (uint8_t)TargetBufferFlags::STENCIL;
+    TargetBufferFlags getClearFlags() const noexcept {
+        TargetBufferFlags clearFlags = {};
+        if (getClearTargetColor())     clearFlags |= TargetBufferFlags::COLOR;
+        if (getClearTargetDepth())     clearFlags |= TargetBufferFlags::DEPTH;
+        if (getClearTargetStencil())   clearFlags |= TargetBufferFlags::STENCIL;
         return clearFlags;
     }
 
+    FCamera const& getCameraUser() const noexcept { return *mCullingCamera; }
     FCamera& getCameraUser() noexcept { return *mCullingCamera; }
     void setCameraUser(FCamera* camera) noexcept { setCullingCamera(camera); }
 
@@ -350,9 +383,9 @@ private:
     Dithering mDithering = Dithering::TEMPORAL;
     bool mShadowingEnabled = true;
     bool mHasPostProcessPass = true;
-    DepthPrepass mDepthPrepass = DepthPrepass::DEFAULT;
     AmbientOcclusion mAmbientOcclusion = AmbientOcclusion::NONE;
     AmbientOcclusionOptions mAmbientOcclusionOptions{};
+    BloomOptions mBloomOptions;
 
     using duration = std::chrono::duration<float, std::milli>;
     DynamicResolutionOptions mDynamicResolution;

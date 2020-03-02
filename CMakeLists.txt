@@ -11,14 +11,42 @@ project(TNT)
 # ==================================================================================================
 # Options
 # ==================================================================================================
+option(FILAMENT_ENABLE_JAVA "Compile Java projects, requires a JDK and the JAVA_HOME env var" ON)
 
-option(ENABLE_JAVA "Compile Java projects, requires a JDK and the JAVA_HOME env var" ON)
+option(FILAMENT_USE_EXTERNAL_GLES3 "Experimental: Compile Filament against OpenGL ES 3" OFF)
 
-option(USE_EXTERNAL_GLES3 "Experimental: Compile Filament against OpenGL ES 3" OFF)
+option(FILAMENT_GENERATE_JS_DOCS "Build WebGL documentation and tutorials" OFF)
 
-option(GENERATE_JS_DOCS "Build WebGL documentation and tutorials" OFF)
+option(FILAMENT_ENABLE_LTO "Enable link-time optimizations if supported by the compiler" OFF)
 
-option(ENABLE_LTO "Enable link-time optimizations if supported by the compiler" OFF)
+option(FILAMENT_SKIP_SAMPLES "Don't build samples" OFF)
+
+# ==================================================================================================
+# Support for ccache
+# ==================================================================================================
+find_program(CCACHE_PROGRAM ccache)
+if (CCACHE_PROGRAM)
+    set(C_LAUNCHER   "${CCACHE_PROGRAM}")
+    set(CXX_LAUNCHER "${CCACHE_PROGRAM}")
+
+    configure_file(build/launch-c.in   launch-c)
+    configure_file(build/launch-cxx.in launch-cxx)
+
+    execute_process(COMMAND chmod a+rx
+        "${CMAKE_BINARY_DIR}/launch-c"
+        "${CMAKE_BINARY_DIR}/launch-cxx"
+    )
+
+    if (CMAKE_GENERATOR STREQUAL "Xcode")
+        set(CMAKE_XCODE_ATTRIBUTE_CC         "${CMAKE_BINARY_DIR}/launch-c")
+        set(CMAKE_XCODE_ATTRIBUTE_CXX        "${CMAKE_BINARY_DIR}/launch-cxx")
+        set(CMAKE_XCODE_ATTRIBUTE_LD         "${CMAKE_BINARY_DIR}/launch-c")
+        set(CMAKE_XCODE_ATTRIBUTE_LDPLUSPLUS "${CMAKE_BINARY_DIR}/launch-cxx")
+    else()
+        set(CMAKE_C_COMPILER_LAUNCHER        "${CMAKE_BINARY_DIR}/launch-c")
+        set(CMAKE_CXX_COMPILER_LAUNCHER      "${CMAKE_BINARY_DIR}/launch-cxx")
+    endif()
+endif()
 
 # ==================================================================================================
 # OS specific
@@ -69,7 +97,6 @@ endif()
 # Check if embree is available.
 # This is an optional dependency and can be installed with homebrew, apt-get, etc.
 # ==================================================================================================
-
 find_package(embree 3.0 QUIET PATHS /usr/lib64/cmake)
 if (embree_FOUND AND NOT ANDROID AND NOT IOS)
     message("Found embree in ${embree_DIR}")
@@ -137,7 +164,7 @@ endif()
 # ==================================================================================================
 # Link time optimizations (LTO)
 # ==================================================================================================
-if (ENABLE_LTO)
+if (FILAMENT_ENABLE_LTO)
     include(CheckIPOSupported)
 
     check_ipo_supported(RESULT IPO_SUPPORT)
@@ -163,7 +190,7 @@ else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_STANDARD} -fstrict-aliasing -Wno-unknown-pragmas -Wno-unused-function")
 endif()
 
-if (USE_EXTERNAL_GLES3)
+if (FILAMENT_USE_EXTERNAL_GLES3)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_EXTERNAL_GLES3")
 endif()
 
@@ -495,13 +522,13 @@ if (APPLE)
     add_subdirectory(${EXTERNAL}/moltenvk/tnt)
 endif()
 
-set (FILAMENT_SAMPLES_BINARY_DIR ${PROJECT_BINARY_DIR}/samples)
+set(FILAMENT_SAMPLES_BINARY_DIR ${PROJECT_BINARY_DIR}/samples)
 
 if (WEBGL)
     add_subdirectory(web/filament-js)
     add_subdirectory(web/samples)
 
-    if (GENERATE_JS_DOCS)
+    if (FILAMENT_GENERATE_JS_DOCS)
         add_subdirectory(web/docs)
     endif()
 
@@ -516,6 +543,7 @@ if (NOT ANDROID AND NOT WEBGL AND NOT IOS)
 
     add_subdirectory(${FILAMENT}/java/filamat)
     add_subdirectory(${FILAMENT}/java/filament)
+
     add_subdirectory(${FILAMENT}/samples)
 
     add_subdirectory(${EXTERNAL}/astcenc/tnt)

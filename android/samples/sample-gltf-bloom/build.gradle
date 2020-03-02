@@ -3,6 +3,8 @@ apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-android-extensions'
 apply plugin: FilamentToolsPlugin
 
+project.ext.isSample = true
+
 filamentTools {
     materialInputDir = file("src/main/materials")
     materialOutputDir = file("src/main/assets/materials")
@@ -29,6 +31,7 @@ android {
         applicationId "com.google.android.filament.bloom"
         minSdkVersion versions.minSdk
         targetSdkVersion versions.targetSdk
+        missingDimensionStrategy 'functionality', 'full'
     }
 
     // We use the .filamat extension for materials compiled with matc

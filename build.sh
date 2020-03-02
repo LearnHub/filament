@@ -2,7 +2,7 @@
 set -e
 
 # Host tools required by Android, WebGL, and iOS builds
-MOBILE_HOST_TOOLS="matc resgen cmgen"
+MOBILE_HOST_TOOLS="matc resgen cmgen filamesh"
 WEB_HOST_TOOLS="${MOBILE_HOST_TOOLS} mipgen filamesh"
 IOS_TOOLCHAIN_URL="https://opensource.apple.com/source/clang/clang-800.0.38/src/cmake/platforms/iOS.cmake"
 
@@ -103,11 +103,12 @@ RUN_TESTS=false
 
 JS_DOCS_OPTION="-DGENERATE_JS_DOCS=OFF"
 
-ENABLE_JAVA=ON
+FILAMENT_ENABLE_JAVA=ON
 
 INSTALL_COMMAND=
 
 VULKAN_ANDROID_OPTION="-DFILAMENT_SUPPORTS_VULKAN=OFF"
+VULKAN_ANDROID_GRADLE_OPTION=""
 
 IOS_BUILD_SIMULATOR=false
 
@@ -146,13 +147,21 @@ function build_desktop_target {
 
     cd out/cmake-${lc_target}
 
+    # On macOS, set the deployment target to 10.14.
+    local name=`echo $(uname)`
+    local lc_name=`echo $name | tr '[:upper:]' '[:lower:]'`
+    if [[ "$lc_name" == "darwin" ]]; then
+        local deployment_target="-DCMAKE_OSX_DEPLOYMENT_TARGET=10.14"
+    fi
+
     if [[ ! -d "CMakeFiles" ]] || [[ "$ISSUE_CMAKE_ALWAYS" == "true" ]]; then
         cmake \
             -G "$BUILD_GENERATOR" \
             -DIMPORT_EXECUTABLES_DIR=out \
             -DCMAKE_BUILD_TYPE=$1 \
             -DCMAKE_INSTALL_PREFIX=../${lc_target}/filament \
-            -DENABLE_JAVA=${ENABLE_JAVA} \
+            -DFILAMENT_ENABLE_JAVA=${FILAMENT_ENABLE_JAVA} \
+            ${deployment_target} \
             ../..
     fi
     ${BUILD_COMMAND} ${build_targets}
@@ -373,7 +382,7 @@ function build_android {
     if [[ "$ISSUE_DEBUG_BUILD" == "true" ]]; then
         ./gradlew \
             -Pfilament_dist_dir=../out/android-debug/filament \
-            -Pextra_cmake_args=${VULKAN_ANDROID_OPTION} \
+            ${VULKAN_ANDROID_GRADLE_OPTION} \
             :filament-android:assembleDebug \
             :gltfio-android:assembleDebug \
             :filament-utils-android:assembleDebug
@@ -390,8 +399,9 @@ function build_android {
             echo "Installing out/filament-android-debug.aar..."
             cp filament-android/build/outputs/aar/filament-android-debug.aar ../out/
 
-            echo "Installing out/gltfio-android-debug.aar..."
-            cp gltfio-android/build/outputs/aar/gltfio-android-debug.aar ../out/
+            echo "Installing out/gltfio-android-*-debug.aar..."
+            cp gltfio-android/build/outputs/aar/gltfio-android-lite-debug.aar ../out/
+            cp gltfio-android/build/outputs/aar/gltfio-android-full-debug.aar ../out/gltfio-android-debug.aar
 
             echo "Installing out/filament-utils-android-debug.aar..."
             cp filament-utils-android/build/outputs/aar/filament-utils-android-debug.aar ../out/
@@ -401,6 +411,7 @@ function build_android {
     if [[ "$ISSUE_RELEASE_BUILD" == "true" ]]; then
         ./gradlew \
             -Pfilament_dist_dir=../out/android-release/filament \
+            ${VULKAN_ANDROID_GRADLE_OPTION} \
             :filament-android:assembleRelease \
             :gltfio-android:assembleRelease \
             :filament-utils-android:assembleRelease
@@ -417,8 +428,9 @@ function build_android {
             echo "Installing out/filament-android-release.aar..."
             cp filament-android/build/outputs/aar/filament-android-release.aar ../out/
 
-            echo "Installing out/gltfio-android-release.aar..."
-            cp gltfio-android/build/outputs/aar/gltfio-android-release.aar ../out/
+            echo "Installing out/gltfio-android-*-release.aar..."
+            cp gltfio-android/build/outputs/aar/gltfio-android-lite-release.aar ../out/
+            cp gltfio-android/build/outputs/aar/gltfio-android-full-release.aar ../out/gltfio-android-release.aar
 
             echo "Installing out/filament-utils-android-release.aar..."
             cp filament-utils-android/build/outputs/aar/filament-utils-android-release.aar ../out/
@@ -592,7 +604,7 @@ function validate_build_command {
     local javac_binary=`which javac`
     if [[ "$JAVA_HOME" == "" ]] || [[ ! "$javac_binary" ]]; then
         echo "Warning: JAVA_HOME is not set, skipping Java projects"
-        ENABLE_JAVA=OFF
+        FILAMENT_ENABLE_JAVA=OFF
     fi
     # If building a WebAssembly module, ensure we know where Emscripten lives.
     if [[ "$EMSDK" == "" ]] && [[ "$ISSUE_WEBGL_BUILD" == "true" ]]; then
@@ -660,7 +672,7 @@ while getopts ":hacfijmp:tuvslw" opt; do
             INSTALL_COMMAND=install
             ;;
         j)
-            ENABLE_JAVA=OFF
+            FILAMENT_ENABLE_JAVA=OFF
             ;;
         m)
             BUILD_GENERATOR="Unix Makefiles"
@@ -699,12 +711,8 @@ while getopts ":hacfijmp:tuvslw" opt; do
             ;;
         v)
             VULKAN_ANDROID_OPTION="-DFILAMENT_SUPPORTS_VULKAN=ON"
+            VULKAN_ANDROID_GRADLE_OPTION="-Pfilament_supports_vulkan"
             echo "Enabling support for Vulkan in the core Filament library."
-            echo ""
-            echo "To switch your application to Vulkan, in Android Studio go to "
-            echo "File > Settings > Build > Compiler. In the command-line options field, "
-            echo "add -Pextra_cmake_args=-DFILAMENT_SUPPORTS_VULKAN=ON."
-            echo "Also be sure to pass Engine.Backend.VULKAN to Engine.create."
             echo ""
             ;;
         s)

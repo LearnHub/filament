@@ -27,7 +27,7 @@ export as namespace Filament;
 
 export function getSupportedFormatSuffix(desired: string): void;
 export function init(assets: string[], onready: () => void): void;
-export function fetch(assets: string[], onready: () => void): void;
+export function fetch(assets: string[], onready: () => void, onfetched: (name: string) => void): void;
 
 export const assets: {[url: string]: Uint8Array};
 
@@ -38,7 +38,6 @@ export type mat3 = glm.mat3|number[];
 export type mat4 = glm.mat4|number[];
 export type quat = glm.quat|number[];
 
-export class Entity {}
 export class Skybox {}
 export class Texture {}
 export class SwapChain {}
@@ -51,6 +50,16 @@ export interface Box {
 export interface Aabb {
     min: float3;
     max: float3;
+}
+
+// TODO: Remove the entity type and just use integers for better parity with Java.
+export class Entity {
+    public getId(): number;
+}
+
+export class EntityVector {
+    public get(index: number): Entity;
+    public size(): number;
 }
 
 export class LightManager$Instance {
@@ -82,6 +91,9 @@ export class MaterialInstance {
     public setMaskThreshold(threshold: number): void;
     public setDoubleSided(doubleSided: boolean): void;
     public setCullingMode(mode: CullingMode): void;
+    public setColorWrite(enable: boolean): void;
+    public setDepthWrite(enable: boolean): void;
+    public setDepthCulling(enable: boolean): void;
 }
 
 export class EntityManager {
@@ -103,7 +115,7 @@ export class VertexBuffer$Builder {
 
 export class IndexBuffer$Builder {
     public indexCount(count: number): IndexBuffer$Builder;
-    public bufferType(IndexBuffer$IndexType): IndexBuffer$Builder;
+    public bufferType(type: IndexBuffer$IndexType): IndexBuffer$Builder;
     public build(engine: Engine): IndexBuffer;
 }
 
@@ -162,7 +174,7 @@ export class LightManager {
     public setIntensityEnergy(instance: LightManager$Instance, watts: number, efficiency: number): void;
     public getIntensity(instance: LightManager$Instance): number;
     public setFalloff(instance: LightManager$Instance, radius: number): void;
-    public getFalloff(instance: LightManager$Instance: number);
+    public getFalloff(instance: LightManager$Instance): number;
     public setSpotLightCone(instance: LightManager$Instance, inner: number, outer: number): void;
     public setSunAngularRadius(instance: LightManager$Instance, angularRadius: number): void;
     public getSunAngularRadius(instance: LightManager$Instance): number;
@@ -183,7 +195,7 @@ export class RenderableManager {
     public hasComponent(entity: Entity): boolean;
     public getInstance(entity: Entity): RenderableManager$Instance;
     public static Builder(ngeos: number): RenderableManager$Builder;
-    public destroy(entity: Entity);
+    public destroy(entity: Entity): void;
     public setAxisAlignedBoundingBox(instance: RenderableManager$Instance, aabb: Box): void;
     public setLayerMask(instance: RenderableManager$Instance, select: number, values: number): void;
     public setPriority(instance: RenderableManager$Instance, priority: number): void;
@@ -196,7 +208,7 @@ export class RenderableManager {
     public setBonesFromMatrices(instance: RenderableManager$Instance, transforms: mat4[],
             offset: number): void
     public setMorphWeights(instance: RenderableManager$Instance, a: number, b: number, c: number,
-            d: number);
+            d: number): void;
     public getAxisAlignedBoundingBox(instance: RenderableManager$Instance): Box;
     public getPrimitiveCount(instance: RenderableManager$Instance): number;
     public setMaterialInstanceAt(instance: RenderableManager$Instance,
@@ -243,11 +255,12 @@ export class Frustum {
 }
 
 export class Camera {
-    public setProjection(Camera$Projection, left: number, right: number, bottom: number,
+    public setProjection(proj: Camera$Projection, left: number, right: number, bottom: number,
         top: number, near: number, far: number): void;
     public setProjectionFov(fovInDegrees: number, aspect: number,
         near: number, far: number, fov: Camera$Fov): void;
     public setLensProjection(focalLength: number, near: number, far: number): void;
+    public setLensProjectionWithAspect(focalLength: number, aspect: number, near: number, far: number): void;
     public setCustomProjection(projection: mat4, near: number, far: number): void;
     public getProjectionMatrix(): mat4;
     public getCullingProjectionMatrix(): mat4;
@@ -271,9 +284,9 @@ export class Camera {
 }
 
 export class IndirectLight {
-    public setIntensity(intensity: number);
+    public setIntensity(intensity: number): void;
     public getIntensity(): number;
-    public setRotation(value: mat3);
+    public setRotation(value: mat3): void;
     public getRotation(): mat3;
     public static getDirectionEstimate(f32array: any): float3;
     public static getColorEstimate(f32array: any, direction: float3): float4;
@@ -297,12 +310,13 @@ export class IcoSphere {
 }
 
 export class Scene {
-    public addEntity(entity: Entity);
+    public addEntity(entity: Entity): void;
+    public addEntities(entities: EntityVector): void;
     public getLightCount(): number;
     public getRenderableCount(): number;
-    public remove(entity: Entity);
-    public setIndirectLight(ibl: IndirectLight);
-    public setSkybox(sky: Skybox);
+    public remove(entity: Entity): void;
+    public setIndirectLight(ibl: IndirectLight|null): void;
+    public setSkybox(sky: Skybox|null): void;
 }
 
 export class RenderTarget {
@@ -312,11 +326,11 @@ export class RenderTarget {
 }
 
 export class View {
-    public setCamera(camera: Camera);
-    public setClearColor(color: float4);
-    public setScene(scene: Scene);
-    public setViewport(viewport: float4);
-    public setRenderTarget(renderTarget: RenderTarget);
+    public setCamera(camera: Camera): void;
+    public setClearColor(color: float4): void;
+    public setScene(scene: Scene): void;
+    public setViewport(viewport: float4): void;
+    public setRenderTarget(renderTarget: RenderTarget): void;
 }
 
 export class TransformManager {
@@ -351,6 +365,8 @@ export class Engine {
     public createTextureFromPng(url: string): Texture;
     public createView(): View;
 
+    public createAssetLoader(): gltfio$AssetLoader;
+
     public destroySwapChain(swapChain: SwapChain): void;
     public destroyRenderer(renderer: Renderer): void;
     public destroyView(view: View): void;
@@ -372,6 +388,36 @@ export class Engine {
     public getTransformManager(): TransformManager;
     public init(assets: string[], onready: () => void): void;
     public loadFilamesh(url: string, definstance: MaterialInstance, matinstances: object): Filamesh;
+}
+
+export class gltfio$AssetLoader {
+    public createAssetFromJson(buffer: any): gltfio$FilamentAsset;
+    public createAssetFromBinary(buffer: any): gltfio$FilamentAsset;
+    public delete(): void;
+}
+
+export class gltfio$FilamentAsset {
+    public loadResources(onDone: () => void|null, onFetched: (s: string) => void|null,
+            basePath: string|null, asyncInterval: number|null): void;
+    public getEntities(): EntityVector;
+    public getRoot(): Entity;
+    public popRenderable(): Entity;
+    public getMaterialInstances(): MaterialInstance[];
+    public getResourceUris(): string[];
+    public getBoundingBox(): Aabb;
+    public getName(entity: Entity): string;
+    public getAnimator(): gltfio$Animator;
+    public getWireframe(): Entity;
+    public getEngine(): Engine;
+    public releaseSourceData(): void;
+}
+
+export class gltfio$Animator {
+    public applyAnimation(index: number): void;
+    public updateBoneMatrices(): void;
+    public getAnimationCount(): number;
+    public getAnimationDuration(index: number): number;
+    public getAnimationName(index: number): string;
 }
 
 export enum Frustum$Plane {
@@ -704,12 +750,6 @@ export enum View$AntiAliasing {
     FXAA,
 }
 
-export enum View$DepthPrepass {
-    DEFAULT,
-    DISABLED,
-    ENABLED,
-}
-
 export enum WrapMode {
     CLAMP_TO_EDGE,
     REPEAT,
@@ -717,7 +757,7 @@ export enum WrapMode {
 }
 
 export function _malloc(size: number): number;
-export function _free(size: number);
+export function _free(size: number): void;
 
 interface HeapInterface {
     set(buffer: any, pointer: number): any;

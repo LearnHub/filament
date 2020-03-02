@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.10)
 project(filament-samples C ASM)
 
+if (FILAMENT_SKIP_SAMPLES)
+    return()
+endif()
+
 set(ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(GENERATION_ROOT ${CMAKE_CURRENT_BINARY_DIR})
 set(RESOURCE_DIR  "${GENERATION_ROOT}/generated/resources")
@@ -44,7 +48,9 @@ set(MATERIAL_SRCS
         materials/sandboxLitFade.mat
         materials/sandboxLitTransparent.mat
         materials/sandboxLitThinRefraction.mat
+        materials/sandboxLitThinRefractionSsr.mat
         materials/sandboxLitSolidRefraction.mat
+        materials/sandboxLitSolidRefractionSsr.mat
         materials/sandboxSpecGloss.mat
         materials/sandboxSubsurface.mat
         materials/sandboxUnlit.mat
@@ -175,6 +181,7 @@ add_library(gltf-resources ${DUMMY_SRC})
 
 set(GLTF_VIEWER_RESOURCE_FILES
     ${ROOT_DIR}/third_party/models/DamagedHelmet/DamagedHelmet.glb
+    ${MATERIAL_DIR}/groundShadow.filamat
 )
 
 get_resgen_vars(${RESOURCE_DIR} gltf_viewer)

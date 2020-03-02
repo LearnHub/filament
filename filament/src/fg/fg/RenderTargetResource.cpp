@@ -22,7 +22,7 @@ using namespace backend;
 
 namespace fg {
 
-void RenderTargetResource::create(FrameGraph& fg) noexcept {
+void RenderTargetResource::preExecuteDevirtualize(FrameGraph& fg) noexcept {
     if (!imported) {
         if (any(attachments)) {
             // devirtualize our texture handles. By this point these handles have been
@@ -30,20 +30,28 @@ void RenderTargetResource::create(FrameGraph& fg) noexcept {
             backend::TargetBufferInfo infos[FrameGraphRenderTarget::Attachments::COUNT];
             for (size_t i = 0, c = desc.attachments.textures.size(); i < c; i++) {
 
+                auto const& attachmentInfo = desc.attachments.textures[i];
+
+#ifndef NDEBUG
                 static constexpr TargetBufferFlags flags[] = {
                         TargetBufferFlags::COLOR,
                         TargetBufferFlags::DEPTH,
                         TargetBufferFlags::STENCIL };
 
-                auto const& attachmentInfo = desc.attachments.textures[i];
                 assert(bool(attachments & flags[i]) == attachmentInfo.isValid());
+#endif
 
                 if (attachmentInfo.isValid()) {
                     fg::ResourceEntry<FrameGraphTexture> const& entry =
                             fg.getResourceEntryUnchecked(attachmentInfo.getHandle());
                     infos[i].handle = entry.getResource().texture;
                     infos[i].level = attachmentInfo.getLevel();
+                    // the attachment buffer (texture or renderbuffer) must be valid
                     assert(infos[i].handle);
+                    // the attachment level must be within range
+                    assert(infos[i].level < entry.descriptor.levels);
+                    // if the attachment is multisampled, then the rendertarget must be too
+                    assert(entry.descriptor.samples <= 1 || entry.descriptor.samples == desc.samples);
                 }
             }
             targetInfo.target = fg.getResourceAllocator().createRenderTarget(name,
@@ -53,7 +61,7 @@ void RenderTargetResource::create(FrameGraph& fg) noexcept {
     }
 }
 
-void RenderTargetResource::destroy(FrameGraph& fg) noexcept {
+void RenderTargetResource::postExecuteDestroy(FrameGraph& fg) noexcept {
     if (!imported) {
         if (targetInfo.target) {
             fg.getResourceAllocator().destroyRenderTarget(targetInfo.target);

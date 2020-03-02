@@ -407,7 +407,7 @@ void applyRefraction(const PixelParams pixel,
 #elif REFRACTION_TYPE == REFRACTION_TYPE_THIN
     refractionThinSphere(pixel, n0, -shading_view, ray);
 #else
-#error "invalid REFRACTION_TYPE"
+#error invalid REFRACTION_TYPE
 #endif
 
     /* compute transmission T */
@@ -441,8 +441,16 @@ void applyRefraction(const PixelParams pixel,
     vec3 Ft = prefilteredRadiance(ray.direction, perceptualRoughness) * frameUniforms.iblLuminance;
 #else
     // compute the point where the ray exits the medium, if needed
-    vec4 p = vec4(frameUniforms.clipFromWorldMatrix * ray.position, 1.0);
-    vec3 Ft = vec3(0.0);    // TODO: sample screen-space at p
+    vec4 p = vec4(frameUniforms.clipFromWorldMatrix * vec4(ray.position, 1.0));
+    p.xy = uvToRenderTargetUV(p.xy * (0.5 / p.w) + 0.5);
+
+    // perceptualRoughness to LOD
+    // Empirical factor to compensate for the gaussian approximation of Dggx, chosen so
+    // cubemap and screen-space modes match at perceptualRoughness 0.125
+    float tweakedPerceptualRoughness = perceptualRoughness * 1.74;
+    float lod = max(0.0, 2.0 * log2(tweakedPerceptualRoughness) + frameUniforms.refractionLodOffset);
+
+    vec3 Ft = textureLod(light_ssr, p.xy, lod).rgb;
 #endif
 
     /* fresnel from the first interface */

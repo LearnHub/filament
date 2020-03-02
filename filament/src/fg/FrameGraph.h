@@ -180,18 +180,18 @@ public:
         return *pass;
     }
 
-    // Adds a reference to 'input', preventing it from being culled.
-    void present(FrameGraphHandle input);
-
     // Adds a simple execute-only pass with side effect (so it's not culled)
     template<typename Execute>
-    void simpleSideEffectPass(const char* name, Execute&& execute) {
-        addPass<Empty>(name, [](FrameGraph::Builder& builder, auto& data) { builder.sideEffect(); },
-                [execute](FrameGraphPassResources const& resources, auto const& data,
+    void addTrivialSideEffectPass(const char* name, Execute&& execute) {
+        addPass<Empty>(name, [](FrameGraph::Builder& builder, auto&) { builder.sideEffect(); },
+                [execute](FrameGraphPassResources const&, auto const&,
                         backend::DriverApi& driver) {
                     execute();
                 });
     }
+
+    // Adds a reference to 'input', preventing it from being culled.
+    void present(FrameGraphHandle input);
 
     // Returns whether the resource handle is valid. A resource handle becomes invalid after
     // it's used to declare a resource write (see Builder::write()).
@@ -288,10 +288,8 @@ private:
 
     FrameGraphHandle createResourceNode(fg::ResourceEntryBase* resource) noexcept;
 
-    enum class DiscardPhase { START, END };
-    backend::TargetBufferFlags computeDiscardFlags(DiscardPhase phase,
-            fg::PassNode const* curr, fg::PassNode const* first,
-            fg::RenderTarget const& renderTarget);
+    bool computeDiscard(const Vector<FrameGraphHandle> fg::PassNode::* list,
+            fg::PassNode const* curr, fg::PassNode const* first, FrameGraphHandle resource);
 
     bool equals(FrameGraphRenderTarget::Descriptor const& cacheEntry,
             FrameGraphRenderTarget::Descriptor const& rt) const noexcept;

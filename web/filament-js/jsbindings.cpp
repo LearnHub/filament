@@ -464,7 +464,6 @@ class_<View>("View")
     .function("getViewport", &View::getViewport)
     .function("setViewport", &View::setViewport)
     .function("setClearColor", &View::setClearColor)
-    .function("setDepthPrepass", &View::setDepthPrepass)
     .function("setPostProcessingEnabled", &View::setPostProcessingEnabled)
     .function("setAntiAliasing", &View::setAntiAliasing)
     .function("getAntiAliasing", &View::getAntiAliasing)
@@ -523,7 +522,15 @@ class_<Camera>("Camera")
         self->setProjection(fovInDegrees, aspect, near, far, direction);
     }), allow_raw_pointers())
 
-    .function("setLensProjection", &Camera::setLensProjection)
+    .function("setLensProjectionWithAspect", EMBIND_LAMBDA(void, (Camera* self,
+                double focalLength, double aspect, double near, double far), {
+        self->setLensProjection(focalLength, aspect, near, far);
+    }), allow_raw_pointers())
+
+    .function("setLensProjection", EMBIND_LAMBDA(void, (Camera* self,
+                double focalLength, double near, double far), {
+        self->setLensProjection(focalLength, near, far);
+    }), allow_raw_pointers())
 
     .function("setCustomProjection", EMBIND_LAMBDA(void, (Camera* self,
             flatmat4 m, double near, double far), {
@@ -545,7 +552,12 @@ class_<Camera>("Camera")
         self->setModelMatrix(m.m);
     }), allow_raw_pointers())
 
-    .function("lookAt", &Camera::lookAt)
+    .function("lookAt", EMBIND_LAMBDA(void, (Camera* self,
+            const math::float3& eye,
+            const math::float3& center,
+            const math::float3& up), {
+        self->lookAt(eye, center, up);
+    }), allow_raw_pointers())
 
     .function("getModelMatrix", EMBIND_LAMBDA(flatmat4, (Camera* self), {
         return flatmat4 { self->getModelMatrix() };
@@ -959,7 +971,10 @@ class_<MaterialInstance>("MaterialInstance")
     .function("setPolygonOffset", &MaterialInstance::setPolygonOffset)
     .function("setMaskThreshold", &MaterialInstance::setMaskThreshold)
     .function("setDoubleSided", &MaterialInstance::setDoubleSided)
-    .function("setCullingMode", &MaterialInstance::setCullingMode);
+    .function("setCullingMode", &MaterialInstance::setCullingMode)
+    .function("setColorWrite", &MaterialInstance::setColorWrite)
+    .function("setDepthWrite", &MaterialInstance::setDepthWrite)
+    .function("setDepthCulling", &MaterialInstance::setDepthCulling);
 
 class_<TextureSampler>("TextureSampler")
     .constructor<backend::SamplerMinFilter, backend::SamplerMagFilter, backend::SamplerWrapMode>();
@@ -1068,7 +1083,8 @@ class_<SkyBuilder>("Skybox$Builder")
 
 /// Entity ::core class:: Handle to an object consisting of a set of components.
 /// To create an entity with no components, use [EntityManager].
-class_<utils::Entity>("Entity");
+class_<utils::Entity>("Entity")
+    .function("getId", &utils::Entity::getId);
 
 /// EntityManager ::core class:: Singleton used for constructing entities in Filament's ECS.
 class_<utils::EntityManager>("EntityManager")
@@ -1335,7 +1351,7 @@ class_<SurfaceBuilder>("SurfaceOrientation$Builder")
     })
 
     .function("_build", EMBIND_LAMBDA(SurfaceOrientation*, (SurfaceBuilder* builder), {
-        return new SurfaceOrientation(builder->build());
+        return builder->build();
     }), allow_raw_pointers());
 
 class_<SurfaceOrientation>("SurfaceOrientation")
@@ -1375,6 +1391,8 @@ class_<FilamentAsset>("gltfio$FilamentAsset")
     }), allow_raw_pointers())
 
     .function("getRoot", &FilamentAsset::getRoot)
+
+    .function("popRenderable", &FilamentAsset::popRenderable)
 
     .function("getMaterialInstances", EMBIND_LAMBDA(std::vector<const MaterialInstance*>,
             (FilamentAsset* self), {
@@ -1439,7 +1457,7 @@ class_<ResourceLoader>("gltfio$ResourceLoader")
     .constructor(EMBIND_LAMBDA(ResourceLoader*, (Engine* engine), {
         return new ResourceLoader({
             .engine = engine,
-            .gltfPath = utils::Path(),
+            .gltfPath = nullptr,
             .normalizeSkinningWeights = true,
             .recomputeBoundingBoxes = true
         });
@@ -1447,9 +1465,22 @@ class_<ResourceLoader>("gltfio$ResourceLoader")
 
     .function("addResourceData", EMBIND_LAMBDA(void, (ResourceLoader* self, std::string url,
             BufferDescriptor buffer), {
-        self->addResourceData(url, std::move(*buffer.bd));
+        self->addResourceData(url.c_str(), std::move(*buffer.bd));
     }), allow_raw_pointers())
 
-    .function("loadResources", &ResourceLoader::loadResources, allow_raw_pointers());
+    .function("hasResourceData", EMBIND_LAMBDA(bool, (ResourceLoader* self, std::string url), {
+        return self->hasResourceData(url.c_str());
+    }), allow_raw_pointers())
+
+    .function("loadResources", EMBIND_LAMBDA(bool, (ResourceLoader* self, FilamentAsset* asset), {
+        return self->loadResources(asset);
+    }), allow_raw_pointers())
+
+    .function("asyncBeginLoad", EMBIND_LAMBDA(bool, (ResourceLoader* self, FilamentAsset* asset), {
+        return self->asyncBeginLoad(asset);
+    }), allow_raw_pointers())
+
+    .function("asyncGetLoadProgress", &ResourceLoader::asyncGetLoadProgress)
+    .function("asyncUpdateLoad", &ResourceLoader::asyncUpdateLoad);
 
 } // EMSCRIPTEN_BINDINGS

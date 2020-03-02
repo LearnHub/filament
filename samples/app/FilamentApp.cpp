@@ -46,6 +46,8 @@
 #include "Cube.h"
 #include "NativeWindowHelper.h"
 
+#include <stb_image.h>
+
 #include "generated/resources/resources.h"
 
 using namespace filament;
@@ -137,6 +139,7 @@ void FilamentApp::run(const Config& config, SetupCallback setupCallback,
         window->mDepthView->getView()->setClearColor({0, 0, 0, 1});
     }
 
+    loadDirt(config);
     loadIBL(config);
     if (mIBL != nullptr) {
         mIBL->getSkybox()->setLayerMask(0x7, 0x4);
@@ -195,19 +198,20 @@ void FilamentApp::run(const Config& config, SetupCallback setupCallback,
     bool mousePressed[3] = { false };
 
     int sidebarWidth = mSidebarWidth;
+    float cameraFocalLength = mCameraFocalLength;
 
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
     SDL_Window* sdlWindow = window->getSDLWindow();
 
     while (!mClosed) {
-
         if (mWindowTitle != SDL_GetWindowTitle(sdlWindow)) {
             SDL_SetWindowTitle(sdlWindow, mWindowTitle.c_str());
         }
 
-        if (mSidebarWidth != sidebarWidth) {
+        if (mSidebarWidth != sidebarWidth || mCameraFocalLength != cameraFocalLength) {
             window->configureCamerasForWindow();
             sidebarWidth = mSidebarWidth;
+            cameraFocalLength = mCameraFocalLength;
         }
 
         if (!UTILS_HAS_THREADING) {
@@ -452,6 +456,37 @@ void FilamentApp::loadIBL(const Config& config) {
     }
 }
 
+void FilamentApp::loadDirt(const Config& config) {
+    if (!config.dirt.empty()) {
+        Path dirtPath(config.dirt);
+
+        if (!dirtPath.exists()) {
+            std::cerr << "The specified dirt file does not exist: " << dirtPath << std::endl;
+            return;
+        }
+
+        if (!dirtPath.isFile()) {
+            std::cerr << "The specified dirt path is not a file: " << dirtPath << std::endl;
+            return;
+        }
+
+        int w, h, n;
+
+        unsigned char* data = stbi_load(dirtPath.getAbsolutePath().c_str(), &w, &h, &n, 3);
+        assert(n == 3);
+
+        mDirt = Texture::Builder()
+                .width(w)
+                .height(h)
+                .format(Texture::InternalFormat::RGB8)
+                .build(*mEngine);
+
+        mDirt->setImage(*mEngine, 0, { data, size_t(w * h * 3),
+                Texture::Format::RGB, Texture::Type::UBYTE,
+                (Texture::PixelBufferDescriptor::Callback)&stbi_image_free });
+    }
+}
+
 void FilamentApp::initSDL() {
     ASSERT_POSTCONDITION(SDL_Init(SDL_INIT_EVENTS) == 0, "SDL_Init Failure");
 }
@@ -516,7 +551,6 @@ FilamentApp::Window::Window(FilamentApp* filamentApp,
         mViews.emplace_back(mDepthView = new CView(*mRenderer, "Depth View"));
         mViews.emplace_back(mGodView = new GodView(*mRenderer, "God View"));
         mViews.emplace_back(mOrthoView = new CView(*mRenderer, "Ortho View"));
-        mDepthView->getView()->setDepthPrepass(View::DepthPrepass::DISABLED);
     }
     mViews.emplace_back(mUiView = new CView(*mRenderer, "UI View"));
 
@@ -640,47 +674,50 @@ void FilamentApp::Window::resize() {
 }
 
 void FilamentApp::Window::configureCamerasForWindow() {
-
     // Determine the current size of the window in physical pixels.
-    uint32_t w, h;
-    SDL_GL_GetDrawableSize(mWindow, (int*) &w, (int*) &h);
-    mWidth = (size_t) w;
-    mHeight = (size_t) h;
+    uint32_t width, height;
+    SDL_GL_GetDrawableSize(mWindow, (int*) &width, (int*) &height);
+    mWidth = (size_t) width;
+    mHeight = (size_t) height;
 
     // Compute the "virtual pixels to physical pixels" scale factor that the
     // the platform uses for UI elements.
     int virtualWidth, virtualHeight;
     SDL_GetWindowSize(mWindow, &virtualWidth, &virtualHeight);
-    float dpiScaleX = (float) w / virtualWidth;
-    float dpiScaleY = (float) h / virtualHeight;
+    float dpiScaleX = (float) width / virtualWidth;
+    float dpiScaleY = (float) height / virtualHeight;
 
     const float3 at(0, 0, -4);
-    const double ratio = double(h) / double(w);
+    const double ratio = double(height) / double(width);
     const int sidebar = mFilamentApp->mSidebarWidth * dpiScaleX;
+
+    // To trigger a floating-point exception, users could shrink the window to be smaller than
+    // the sidebar. To prevent this we simply clamp the width of the main viewport.
+    const uint32_t mainWidth = std::max(1, (int) width - sidebar);
 
     double near = 0.1;
     double far = 50;
-    mMainCamera->setProjection(45.0, double(w - sidebar) / h, near, far, Camera::Fov::VERTICAL);
-    mDebugCamera->setProjection(45.0, double(w) / h, 0.0625, 4096, Camera::Fov::VERTICAL);
+    mMainCamera->setLensProjection(mFilamentApp->mCameraFocalLength, double(mainWidth) / height, near, far);
+    mDebugCamera->setProjection(45.0, double(width) / height, 0.0625, 4096, Camera::Fov::VERTICAL);
     mOrthoCamera->setProjection(Camera::Projection::ORTHO, -3, 3, -3 * ratio, 3 * ratio, near, far);
     mOrthoCamera->lookAt({ 0, 0, 0 }, {0, 0, -4});
     mUiCamera->setProjection(Camera::Projection::ORTHO,
-            0.0, w / dpiScaleX,
-            h / dpiScaleY, 0.0,
+            0.0, width / dpiScaleX,
+            height / dpiScaleY, 0.0,
             0.0, 1.0);
 
     // We're in split view when there are more views than just the Main and UI views.
     if (mViews.size() > 2) {
-        uint32_t vpw = w / 2;
-        uint32_t vph = h / 2;
-        mMainView->setViewport ({            0,            0,     vpw, vph     });
-        mDepthView->setViewport({ int32_t(vpw),            0, w - vpw, vph     });
-        mGodView->setViewport  ({ int32_t(vpw), int32_t(vph), w - vpw, h - vph });
-        mOrthoView->setViewport({            0, int32_t(vph),     vpw, h - vph });
+        uint32_t vpw = width / 2;
+        uint32_t vph = height / 2;
+        mMainView->setViewport ({            0,            0, vpw,         vph          });
+        mDepthView->setViewport({ int32_t(vpw),            0, width - vpw, vph          });
+        mGodView->setViewport  ({ int32_t(vpw), int32_t(vph), width - vpw, height - vph });
+        mOrthoView->setViewport({            0, int32_t(vph), vpw,         height - vph });
     } else {
-        mMainView->setViewport({ sidebar, 0, w - sidebar, h });
+        mMainView->setViewport({ sidebar, 0, mainWidth, height });
     }
-    mUiView->setViewport({ 0, 0, w, h });
+    mUiView->setViewport({ 0, 0, width, height });
 }
 
 // ------------------------------------------------------------------------------------------------

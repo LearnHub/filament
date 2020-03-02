@@ -27,12 +27,11 @@ import com.google.android.filament.utils.KtxLoader
 import com.google.android.filament.utils.ModelViewer
 import com.google.android.filament.utils.Utils
 import java.nio.ByteBuffer
-import java.nio.channels.Channels
 
 class MainActivity : Activity() {
 
     companion object {
-        // Load the library for the utility layer,  which includes gltfio and the Filament core.
+        // Load the library for the utility layer, which in turn loads gltfio and the Filament core.
         init { Utils.init() }
     }
 
@@ -70,7 +69,7 @@ class MainActivity : Activity() {
             ByteBuffer.wrap(bytes)
         }
         modelViewer.loadModelGltf(buffer) { uri ->
-            readUncompressedAsset("models/$uri")
+            readCompressedAsset("models/$uri")
         }
         modelViewer.transformToUnitCube()
     }
@@ -79,24 +78,20 @@ class MainActivity : Activity() {
         val engine = modelViewer.engine
         val scene = modelViewer.scene
         val ibl = "venetian_crossroads_2k"
-        readUncompressedAsset("envs/$ibl/${ibl}_ibl.ktx").let {
-            scene.indirectLight = KtxLoader.createIndirectLight(engine, it, KtxLoader.Options())
+        readCompressedAsset("envs/$ibl/${ibl}_ibl.ktx").let {
+            scene.indirectLight = KtxLoader.createIndirectLight(engine, it)
             scene.indirectLight!!.intensity = 50_000.0f
         }
-        readUncompressedAsset("envs/$ibl/${ibl}_skybox.ktx").let {
-            scene.skybox = KtxLoader.createSkybox(engine, it, KtxLoader.Options())
+        readCompressedAsset("envs/$ibl/${ibl}_skybox.ktx").let {
+            scene.skybox = KtxLoader.createSkybox(engine, it)
         }
     }
 
-    private fun readUncompressedAsset(assetName: String): ByteBuffer {
-        assets.openFd(assetName).use { fd ->
-            val input = fd.createInputStream()
-            val dst = ByteBuffer.allocate(fd.length.toInt())
-            val src = Channels.newChannel(input)
-            src.read(dst)
-            src.close()
-            return dst.apply { rewind() }
-        }
+    private fun readCompressedAsset(assetName: String): ByteBuffer {
+        val input = assets.open(assetName)
+        val bytes = ByteArray(input.available())
+        input.read(bytes)
+        return ByteBuffer.wrap(bytes)
     }
 
     override fun onResume() {

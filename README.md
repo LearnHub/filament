@@ -31,7 +31,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.google.android.filament:filament-android:1.4.4'
+    implementation 'com.google.android.filament:filament-android:1.4.5'
 }
 ```
 
@@ -39,6 +39,7 @@ Here are all the libraries available in the group `com.google.android.filament`:
 
 - `filament-android`: the Filament rendering engine itself
 - `gltfio-android`: a glTF 2.0 loader for Filament, depends on `filament-android`
+- `gltfio-android-lite`: trimmed version of gltfio that does not support some glTF features
 - `filament-utils-android`: KTX loading, Kotlin math, and camera utilities, depends on `gltfio-android`
 - `filamat-android-full`: a runtime material builder/compiler. This library is large but contains
   a full shader compiler/validator/optimizer
@@ -124,8 +125,10 @@ Here are a few screenshots of applications that use Filament in production:
 - Image-based lighting
 - Physically-based camera (shutter speed, sensitivity and aperture)
 - Physical light units
-- Point light, spot light and directional light
-- SSAO
+- Point lights, spot lights and directional light
+- Screen-space ambient occlusion
+- Screen-space refraction
+- HDR bloom
 - ACES-like tone-mapping
 - Temporal dithering
 - FXAA, MSAA and specular anti-aliasing

@@ -11,16 +11,17 @@ android {
 
         externalNativeBuild {
             cmake {
-                arguments.add("-DANDROID_PIE=ON")
-                arguments.add("-DANDROID_PLATFORM=android-${versions.targetSdk}".toString())
-                arguments.add("-DANDROID_STL=c++_static")
-                arguments.add("-DFILAMENT_DIST_DIR=${filamentPath}".toString())
-                cppFlags.add("-std=c++14")
-                if (project.hasProperty('extra_cmake_args')) {
-                    arguments.add(extra_cmake_args)
-                }
+                arguments.addAll(rootProject.ext.cmakeArgs)
+                cppFlags.addAll(rootProject.ext.cppFlags)
             }
         }
+    }
+
+    // The gltfio library has two variants: full and lite. Here we default to the "full" variant.
+    // Replace "full" with "lite" to use the gltfio-lite variant, which has a smaller binary size
+    // but comes with certain restrictions.
+    defaultConfig {
+        missingDimensionStrategy 'functionality', 'full'
     }
 
     externalNativeBuild {
@@ -39,6 +40,15 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    // No need to package up the following shared libs, which arise as a side effect of our
+    // externalNativeBuild dependencies. When clients pick and choose from project-level gradle
+    // dependencies, these shared libs already get pulled in, so we need to avoid the error:
+    // "More than one file was found with OS independent path ..."
+    packagingOptions {
+        exclude 'lib/*/libfilament-jni.so'
+        exclude 'lib/*/libgltfio-jni.so'
     }
 }
 

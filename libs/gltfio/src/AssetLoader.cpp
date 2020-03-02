@@ -122,6 +122,10 @@ struct FAssetLoader : public AssetLoader {
         return mMaterials->getMaterialsCount();
     }
 
+    NameComponentManager* getNames() const noexcept {
+        return mNameManager;
+    }
+
     const Material* const* getMaterials() const noexcept {
         return mMaterials->getMaterials();
     }
@@ -358,6 +362,12 @@ void FAssetLoader::createRenderable(const cgltf_node* node, Entity entity) {
         UvMap uvmap {};
         bool hasVertexColor = primitiveHasVertexColor(inputPrim);
         MaterialInstance* mi = createMaterialInstance(inputPrim->material, &uvmap, hasVertexColor);
+        if (!mi) {
+            mError = true;
+            continue;
+        }
+
+        mResult->mDependencyGraph.addEdge(entity, mi);
         builder.material(index, mi);
 
         // Create a Filament VertexBuffer and IndexBuffer for this prim if we haven't already.
@@ -545,6 +555,12 @@ bool FAssetLoader::createPrimitive(const cgltf_primitive* inPrim, Primitive* out
         vbb.normalized(semantic, inputAccessor->normalized);
     }
 
+    // If the model is lit but does not have normals, we'll need to generate flat normals.
+    if (inPrim->material && !inPrim->material->unlit && !hasNormals) {
+        vbb.attribute(VertexAttribute::TANGENTS, slot++, VertexBuffer::AttributeType::SHORT4);
+        vbb.normalized(VertexAttribute::TANGENTS);
+    }
+
     cgltf_size targetsCount = inPrim->targets_count;
     if (targetsCount > MAX_MORPH_TARGETS) {
         slog.w << "Too many morph targets in " << name << io::endl;
@@ -628,10 +644,6 @@ bool FAssetLoader::createPrimitive(const cgltf_primitive* inPrim, Primitive* out
         }
     }
 
-    if (inPrim->material && !inPrim->material->unlit && !hasNormals) {
-        slog.w << "Missing normals in " << name << io::endl;
-    }
-
     if (needsDummyData) {
         slot++;
     }
@@ -688,6 +700,22 @@ bool FAssetLoader::createPrimitive(const cgltf_primitive* inPrim, Primitive* out
             .generateTangents = false,
             .sparseAccessor = (bool) inputAccessor->is_sparse,
         });
+    }
+
+    // If the model is lit but does not have normals, we'll need to generate flat normals.
+    if (inPrim->material && !inPrim->material->unlit && !hasNormals) {
+            mResult->mBufferBindings.push_back({
+                .uri = "",
+                .totalSize = 0,
+                .bufferIndex = uint8_t(slot++),
+                .vertexBuffer = vertices,
+                .indexBuffer = nullptr,
+                .convertBytesToShorts = false,
+                .generateTrivialIndices = false,
+                .generateDummyData = false,
+                .generateTangents = true,
+                .sparseAccessor = false,
+            });
     }
 
     for (cgltf_size targetIndex = 0; targetIndex < targetsCount; targetIndex++) {
@@ -773,6 +801,7 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_material* inp
         .name = (char*) "Default GLTF material",
         .has_pbr_metallic_roughness = true,
         .has_pbr_specular_glossiness = false,
+        .has_clearcoat = false,
         .pbr_metallic_roughness = {
 	        .base_color_factor = {1.0, 1.0, 1.0, 1.0},
 	        .metallic_factor = 1.0,
@@ -783,6 +812,7 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_material* inp
 
     auto mrConfig = inputMat->pbr_metallic_roughness;
     auto sgConfig = inputMat->pbr_specular_glossiness;
+    auto ccConfig = inputMat->clearcoat;
 
     bool hasTextureTransforms =
         sgConfig.diffuse_texture.has_transform ||
@@ -791,7 +821,10 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_material* inp
         mrConfig.metallic_roughness_texture.has_transform ||
         inputMat->normal_texture.has_transform ||
         inputMat->occlusion_texture.has_transform ||
-        inputMat->emissive_texture.has_transform;
+        inputMat->emissive_texture.has_transform ||
+        ccConfig.clearcoat_texture.has_transform ||
+        ccConfig.clearcoat_roughness_texture.has_transform ||
+        ccConfig.clearcoat_normal_texture.has_transform;
 
     cgltf_texture_view baseColorTexture = mrConfig.base_color_texture;
     cgltf_texture_view metallicRoughnessTexture = mrConfig.metallic_roughness_texture;
@@ -810,10 +843,17 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_material* inp
         .hasMetallicRoughnessTexture = !!metallicRoughnessTexture.texture,
         .metallicRoughnessUV = (uint8_t) metallicRoughnessTexture.texcoord,
         .baseColorUV = (uint8_t) baseColorTexture.texcoord,
+        .hasClearCoatTexture = !!ccConfig.clearcoat_texture.texture,
+        .clearCoatUV = (uint8_t) ccConfig.clearcoat_texture.texcoord,
+        .hasClearCoatRoughnessTexture = !!ccConfig.clearcoat_roughness_texture.texture,
+        .clearCoatRoughnessUV = (uint8_t) ccConfig.clearcoat_roughness_texture.texcoord,
+        .hasClearCoatNormalTexture = !!ccConfig.clearcoat_normal_texture.texture,
+        .clearCoatNormalUV = (uint8_t) ccConfig.clearcoat_normal_texture.texcoord,
+        .hasClearCoat = (bool) inputMat->has_clearcoat,
+        .hasTextureTransforms = hasTextureTransforms,
         .emissiveUV = (uint8_t) inputMat->emissive_texture.texcoord,
         .aoUV = (uint8_t) inputMat->occlusion_texture.texcoord,
         .normalUV = (uint8_t) inputMat->normal_texture.texcoord,
-        .hasTextureTransforms = hasTextureTransforms,
     };
 
     if (inputMat->has_pbr_specular_glossiness) {
@@ -845,6 +885,11 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_material* inp
     // This not only creates a material instance, it modifies the material key according to our
     // rendering constraints. For example, Filament only supports 2 sets of texture coordinates.
     MaterialInstance* mi = mMaterials->createMaterialInstance(&matkey, uvmap, inputMat->name);
+    if (!mi) {
+        slog.e << "No material with the specified requirements exists." << io::endl;
+        return nullptr;
+    }
+
     mResult->mMaterialInstances.push_back(mi);
 
     if (inputMat->alpha_mode == cgltf_alpha_mode_mask) {
@@ -923,6 +968,37 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_material* inp
         }
     }
 
+    if (matkey.hasClearCoat) {
+        mi->setParameter("clearCoatFactor", ccConfig.clearcoat_factor);
+        mi->setParameter("clearCoatRoughnessFactor", ccConfig.clearcoat_roughness_factor);
+
+        if (matkey.hasClearCoatTexture) {
+            addTextureBinding(mi, "clearCoatMap", ccConfig.clearcoat_texture.texture, false);
+            if (matkey.hasTextureTransforms) {
+                const cgltf_texture_transform& uvt = ccConfig.clearcoat_texture.transform;
+                auto uvmat = matrixFromUvTransform(uvt.offset, uvt.rotation, uvt.scale);
+                mi->setParameter("clearCoatUvMatrix", uvmat);
+            }
+        }
+        if (matkey.hasClearCoatRoughnessTexture) {
+            addTextureBinding(mi, "clearCoatRoughnessMap", ccConfig.clearcoat_roughness_texture.texture, false);
+            if (matkey.hasTextureTransforms) {
+                const cgltf_texture_transform& uvt = ccConfig.clearcoat_roughness_texture.transform;
+                auto uvmat = matrixFromUvTransform(uvt.offset, uvt.rotation, uvt.scale);
+                mi->setParameter("clearCoatRoughnessUvMatrix", uvmat);
+            }
+        }
+        if (matkey.hasClearCoatNormalTexture) {
+            addTextureBinding(mi, "clearCoatNormalMap", ccConfig.clearcoat_normal_texture.texture, false);
+            if (matkey.hasTextureTransforms) {
+                const cgltf_texture_transform& uvt = ccConfig.clearcoat_normal_texture.transform;
+                auto uvmat = matrixFromUvTransform(uvt.offset, uvt.rotation, uvt.scale);
+                mi->setParameter("clearCoatNormalUvMatrix", uvmat);
+            }
+            mi->setParameter("clearCoatNormalScale", ccConfig.clearcoat_normal_texture.scale);
+        }
+    }
+
     mMatInstanceCache[key] = {mi, *uvmap};
     return mi;
 }
@@ -963,6 +1039,7 @@ void FAssetLoader::addTextureBinding(MaterialInstance* materialInstance, const c
         .sampler = dstSampler,
         .srgb = srgb
     });
+    mResult->mDependencyGraph.addEdge(materialInstance, parameterName);
 }
 
 void FAssetLoader::importSkinningData(Skin& dstSkin, const cgltf_skin& srcSkin) {
@@ -1020,6 +1097,10 @@ void AssetLoader::destroyAsset(const FilamentAsset* asset) {
 
 size_t AssetLoader::getMaterialsCount() const noexcept {
     return upcast(this)->getMaterialsCount();
+}
+
+NameComponentManager* AssetLoader::getNames() const noexcept {
+    return upcast(this)->getNames();
 }
 
 const Material* const* AssetLoader::getMaterials() const noexcept {

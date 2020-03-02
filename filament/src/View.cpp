@@ -53,13 +53,6 @@ using namespace backend;
 
 namespace details {
 
-// values of the 'VISIBLE_MASK' after culling (0: not visible)
-static constexpr size_t VISIBLE_RENDERABLE_BIT = 0u;
-static constexpr size_t VISIBLE_SHADOW_CASTER_BIT = 1u;
-static constexpr uint8_t VISIBLE_RENDERABLE = 1u << VISIBLE_RENDERABLE_BIT;
-static constexpr uint8_t VISIBLE_SHADOW_CASTER = 1u << VISIBLE_SHADOW_CASTER_BIT;
-static constexpr uint8_t VISIBLE_ALL = VISIBLE_RENDERABLE | VISIBLE_SHADOW_CASTER;
-
 FView::FView(FEngine& engine)
     : mFroxelizer(engine),
       mPerViewUb(PerViewUib::getUib().getSize()),
@@ -102,6 +95,9 @@ void FView::terminate(FEngine& engine) {
 }
 
 void FView::setViewport(filament::Viewport const& viewport) noexcept {
+    // catch the cases were user had an underflow and didn't catch it.
+    assert((int32_t)viewport.width > 0);
+    assert((int32_t)viewport.height > 0);
     mViewport = viewport;
 }
 
@@ -509,7 +505,7 @@ void FView::prepare(FEngine& engine, backend::DriverApi& driver, ArenaScope& are
 
         /*
          * Shadowing: compute the shadow camera and cull shadow casters
-         * (this will set the VISIBLE_SHADOW_CASTER bit)
+         * (this will set the VISIBLE_DIR_SHADOW_CASTER bit)
          */
 
         prepareShadowing(engine, driver, renderableData, scene->getLightData());
@@ -533,7 +529,7 @@ void FView::prepare(FEngine& engine, backend::DriverApi& driver, ArenaScope& are
         auto beginCasters = partition(beginRenderables, renderableData.end(), VISIBLE_RENDERABLE);
         auto beginCastersOnly = partition(beginCasters, renderableData.end(), VISIBLE_ALL);
         auto endCastersOnly = partition(beginCastersOnly, renderableData.end(),
-                VISIBLE_SHADOW_CASTER);
+                VISIBLE_DIR_SHADOW_CASTER);
 
         // convert to indices
         uint32_t iEnd = uint32_t(endCastersOnly - beginRenderables);
@@ -595,10 +591,28 @@ void FView::computeVisibilityMasks(
         Culler::result_type mask = visibleMask[i];
         FRenderableManager::Visibility v = visibility[i];
         bool inVisibleLayer = layers[i] & visibleLayers;
+
+        // The logic below essentially does the following:
+        //
+        // if inVisibleLayer:
+        //     if !v.culling:
+        //         set all bits in visibleMask to 1
+        // else:
+        //     set all bits in visibleMask to 0
+        // if !v.castShadows:
+        //     set shadow visibility bits in visibleMask to 0
+        //
+        // It is written without if statements to avoid branches, which allows it to be vectorized 16x.
+
         bool visRenderables   = (!v.culling || (mask & VISIBLE_RENDERABLE))    && inVisibleLayer;
-        bool visShadowCasters = (!v.culling || (mask & VISIBLE_SHADOW_CASTER)) && inVisibleLayer && v.castShadows;
+        bool visShadowCasters = (!v.culling || (mask & VISIBLE_DIR_SHADOW_CASTER)) && inVisibleLayer && v.castShadows;
         visibleMask[i] = Culler::result_type(visRenderables) |
-                         Culler::result_type(visShadowCasters << 1u);
+                Culler::result_type(visShadowCasters << 1u);
+        // this loop gets fully unrolled
+        for (size_t j = 0; j < CONFIG_MAX_SHADOW_CASTING_SPOTS; ++j) {
+            bool vIsSpotShadowCaster = (!v.culling || (mask & VISIBLE_SPOT_SHADOW_CASTER_N(j))) && inVisibleLayer && v.castShadows;
+            visibleMask[i] |= Culler::result_type(vIsSpotShadowCaster << (j + 2));
+        }
     }
 }
 
@@ -647,8 +661,20 @@ void FView::prepareSSAO(Handle<HwTexture> ssao) const noexcept {
     });
 }
 
+void FView::prepareSSR(backend::Handle<backend::HwTexture> ssr, float refractionLodOffset) const noexcept {
+    mPerViewSb.setSampler(PerViewSib::SSR, ssr, {
+            .filterMag = SamplerMagFilter::LINEAR,
+            .filterMin = SamplerMinFilter::LINEAR_MIPMAP_LINEAR
+    });
+    mPerViewUb.setUniform(offsetof(PerViewUib, refractionLodOffset), refractionLodOffset);
+}
+
 void FView::cleanupSSAO() const noexcept {
     mPerViewSb.setSampler(PerViewSib::SSAO, {}, {});
+}
+
+void FView::cleanupSSR() const noexcept {
+    mPerViewSb.setSampler(PerViewSib::SSR, {}, {});
 }
 
 void FView::froxelize(FEngine& engine) const noexcept {
@@ -692,7 +718,7 @@ UTILS_NOINLINE
 void FView::prepareVisibleShadowCasters(JobSystem& js,
         Frustum const& lightFrustum, FScene::RenderableSoa& renderableData) noexcept {
     SYSTRACE_CALL();
-    FView::cullRenderables(js, renderableData, lightFrustum, VISIBLE_SHADOW_CASTER_BIT);
+    FView::cullRenderables(js, renderableData, lightFrustum, VISIBLE_DIR_SHADOW_CASTER_BIT);
 }
 
 void FView::cullRenderables(JobSystem& js,
@@ -940,14 +966,6 @@ bool View::isFrontFaceWindingInverted() const noexcept {
     return upcast(this)->isFrontFaceWindingInverted();
 }
 
-void View::setDepthPrepass(View::DepthPrepass prepass) noexcept {
-    upcast(this)->setDepthPrepass(prepass);
-}
-
-View::DepthPrepass View::getDepthPrepass() const noexcept {
-    return upcast(this)->getDepthPrepass();
-}
-
 void View::setDynamicLightingOptions(float zLightNear, float zLightFar) noexcept {
     upcast(this)->setDynamicLightingOptions(zLightNear, zLightFar);
 }
@@ -966,6 +984,14 @@ void View::setAmbientOcclusionOptions(View::AmbientOcclusionOptions const& optio
 
 View::AmbientOcclusionOptions const& View::getAmbientOcclusionOptions() const noexcept {
     return upcast(this)->getAmbientOcclusionOptions();
+}
+
+void View::setBloomOptions(View::BloomOptions options) noexcept {
+    upcast(this)->setBloomOptions(options);
+}
+
+View::BloomOptions View::getBloomOptions() const noexcept {
+    return upcast(this)->getBloomOptions();
 }
 
 

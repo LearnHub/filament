@@ -403,12 +403,12 @@ void VulkanDriver::createDefaultRenderTargetR(Handle<HwRenderTarget> rth, int) {
 
 void VulkanDriver::createRenderTargetR(Handle<HwRenderTarget> rth,
         TargetBufferFlags targets, uint32_t width, uint32_t height, uint8_t samples,
-        TargetBufferInfo color, TargetBufferInfo depth,
+        backend::MRT color, TargetBufferInfo depth,
         TargetBufferInfo stencil) {
-    auto colorTexture = color.handle ? handle_cast<VulkanTexture>(mHandleMap, color.handle) : nullptr;
+    auto colorTexture = color[0].handle ? handle_cast<VulkanTexture>(mHandleMap, color[0].handle) : nullptr;
     auto depthTexture = depth.handle ? handle_cast<VulkanTexture>(mHandleMap, depth.handle) : nullptr;
     auto renderTarget = construct_handle<VulkanRenderTarget>(mHandleMap, rth, mContext,
-            width, height, color.level, colorTexture, depth.level, depthTexture);
+            width, height, color[0].level, colorTexture, depth.level, depthTexture);
     mDisposer.createDisposable(renderTarget, [this, rth] () {
         destruct_handle<VulkanRenderTarget>(mHandleMap, rth);
     });
@@ -723,8 +723,8 @@ void VulkanDriver::beginRenderPass(Handle<HwRenderTarget> rth, const RenderPassP
     const VkExtent2D extent = rt->getExtent();
     assert(extent.width > 0 && extent.height > 0);
 
-    const auto color = rt->getColor();
-    const auto depth = rt->getDepth();
+    const VulkanAttachment color = rt->getColor();
+    const VulkanAttachment depth = rt->getDepth();
     const bool hasColor = color.format != VK_FORMAT_UNDEFINED;
     const bool hasDepth = depth.format != VK_FORMAT_UNDEFINED;
 
@@ -736,15 +736,8 @@ void VulkanDriver::beginRenderPass(Handle<HwRenderTarget> rth, const RenderPassP
     VkImageLayout finalDepthLayout;
 
     if (rt->isOffscreen()) {
-
-        // If we're discarding the contents of the color buffer after the render pass, it's safe to
-        // assume that we will not be sampling from it.
-        finalColorLayout = any(params.flags.discardEnd & TargetBufferFlags::COLOR) ?
-                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL :
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
+        finalColorLayout = VK_IMAGE_LAYOUT_GENERAL;
         finalDepthLayout = VK_IMAGE_LAYOUT_GENERAL;
-
     } else {
         finalColorLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         finalDepthLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -1032,7 +1025,7 @@ void VulkanDriver::blit(TargetBufferFlags buffers,
                 filter == SamplerMagFilter::NEAREST ? VK_FILTER_NEAREST : VK_FILTER_LINEAR);
 
         VulkanTexture::transitionImageLayout(cmdbuffer, dstImage, VK_IMAGE_LAYOUT_UNDEFINED,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, dstLevel, 1);
+                VK_IMAGE_LAYOUT_GENERAL, dstLevel, 1);
     };
 
     if (!mContext.currentCommands) {
@@ -1139,20 +1132,10 @@ void VulkanDriver::draw(PipelineState pipelineState, Handle<HwRenderPrimitive> r
             const auto* texture = handle_const_cast<VulkanTexture>(mHandleMap, boundSampler->t);
             mDisposer.acquire(texture, commands->resources);
 
-            // Check that we do not sample from the current color attachment. It's fine to sample
-            // from the current depth attachment when depth writes are disabled, which is useful in
-            // some SSAO implementations.
-            ASSERT_POSTCONDITION_NON_FATAL(
-                    mCurrentRenderTarget->getColor().image != texture->textureImage,
-                    "Attempting to sample color from the current render target");
-
-            VkImageLayout layout = any(texture->usage & TextureUsage::DEPTH_ATTACHMENT) ?
-                        VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
             mBinder.bindSampler(bindingPoint, {
                 .sampler = vksampler,
                 .imageView = texture->imageView,
-                .imageLayout = layout
+                .imageLayout = getTextureLayout(texture->usage)
             });
         }
     }

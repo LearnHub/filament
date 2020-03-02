@@ -69,17 +69,16 @@ public:
     ~SimpleViewer();
 
     /**
-     * Sets or changes the asset that is being viewed.
+     * Adds the asset's ready-to-render entities into the scene and optionally transforms the root
+     * node to make it fit into a unit cube at the origin.
      *
-     * This adds all the asset's entities into the scene and optionally transforms the asset to make
-     * it fit into a unit cube at the origin. The viewer does not claim ownership over the asset or
-     * its entities. Clients should use AssetLoader and ResourceLoader to load an asset before
-     * passing it in.
+     * The viewer does not claim ownership over the asset or its entities. Clients should use
+     * AssetLoader and ResourceLoader to load an asset before passing it in.
      *
      * @param asset The asset to view.
      * @param scale Adds a transform to the root to fit the asset into a unit cube at the origin.
      */
-    void setAsset(FilamentAsset* asset, bool scale);
+    void populateScene(FilamentAsset* asset, bool scale);
 
     /**
      * Removes the current asset from the viewer.
@@ -138,12 +137,6 @@ public:
     void enableDithering(bool b) { mEnableDithering = b; }
 
     /**
-     * Enables depth prepass on the view.
-     * Defaults to true.
-     */
-    void enablePrepass(bool b) { mEnablePrepass = b; }
-
-    /**
      * Enables FXAA antialiasing in the post-process pipeline.
      * Defaults to true.
      */
@@ -160,6 +153,14 @@ public:
      * Defaults to true.
      */
     void enableSSAO(bool b) { mEnableSsao = b; }
+
+    /**
+     * Enables Bloom.
+     * Defaults to true.
+     */
+    void enableBloom(bool bloom) {
+        mBloomOptions.enabled = bloom;
+    }
 
     /**
      * Adjusts the intensity of the IBL.
@@ -195,10 +196,10 @@ private:
     bool mEnableSunlight = true;
     bool mEnableShadows = true;
     bool mEnableDithering = true;
-    bool mEnablePrepass = true;
     bool mEnableFxaa = true;
     bool mEnableMsaa = true;
     bool mEnableSsao = true;
+    filament::View::BloomOptions mBloomOptions = { .enabled = true };
     int mSidebarWidth;
     uint32_t mFlags;
 };
@@ -264,18 +265,28 @@ SimpleViewer::~SimpleViewer() {
     mEngine->destroy(mSunlight);
 }
 
-void SimpleViewer::setAsset(FilamentAsset* asset, bool scale) {
-    using namespace filament::math;
-    removeAsset();
-    mAsset = asset;
-    mAnimator = asset->getAnimator();
-    if (scale) {
-        auto& tcm = mEngine->getTransformManager();
-        auto root = tcm.getInstance(mAsset->getRoot());
-        mat4f transform = fitIntoUnitCube(mAsset->getBoundingBox());
-        tcm.setTransform(root, transform);
+void SimpleViewer::populateScene(FilamentAsset* asset, bool scale) {
+    if (mAsset != asset) {
+        removeAsset();
+        mAsset = asset;
+        if (!asset) {
+            mAnimator = nullptr;
+            return;
+        }
+        mAnimator = asset->getAnimator();
+        if (scale) {
+            auto& tcm = mEngine->getTransformManager();
+            auto root = tcm.getInstance(mAsset->getRoot());
+            filament::math::mat4f transform = fitIntoUnitCube(mAsset->getBoundingBox());
+            tcm.setTransform(root, transform);
+        }
     }
-    mScene->addEntities(mAsset->getEntities(), mAsset->getEntityCount());
+
+    static constexpr int kNumAvailable = 128;
+    utils::Entity renderables[kNumAvailable];
+    while (size_t numWritten = mAsset->popRenderables(renderables, kNumAvailable)) {
+        mScene->addEntities(renderables, numWritten);
+    }
 }
 
 void SimpleViewer::removeAsset() {
@@ -313,6 +324,9 @@ void SimpleViewer::updateIndirectLight() {
 }
 
 void SimpleViewer::applyAnimation(double currentTime) {
+    if (!mAnimator) {
+        return;
+    }
     static double startTime = 0;
     const size_t numAnimations = mAnimator->getAnimationCount();
     if (mResetAnimation) {
@@ -370,7 +384,7 @@ void SimpleViewer::updateUserInterface() {
         const char* name = mAsset->getName(entity);
         const char* label = name ? name : (rinstance ? "Mesh" : "Node");
 
-        ImGuiTreeNodeFlags flags = rinstance ? 0 : ImGuiTreeNodeFlags_DefaultOpen;
+        ImGuiTreeNodeFlags flags = 0; // rinstance ? 0 : ImGuiTreeNodeFlags_DefaultOpen;
         std::vector<utils::Entity> children(tm.getChildCount(tinstance));
         if (ImGui::TreeNodeEx((const void*) treeNodeId, flags, "%s", label)) {
             if (rinstance) {
@@ -417,19 +431,18 @@ void SimpleViewer::updateUserInterface() {
 
     if (ImGui::CollapsingHeader("View")) {
         ImGui::Checkbox("Dithering", &mEnableDithering);
-        ImGui::Checkbox("Depth prepass", &mEnablePrepass);
         ImGui::Checkbox("FXAA", &mEnableFxaa);
         ImGui::Checkbox("MSAA 4x", &mEnableMsaa);
         ImGui::Checkbox("SSAO", &mEnableSsao);
+        ImGui::Checkbox("Bloom", &mBloomOptions.enabled);
     }
 
-    mView->setDepthPrepass(
-            mEnablePrepass ? View::DepthPrepass::ENABLED : View::DepthPrepass::DISABLED);
     mView->setDithering(mEnableDithering ? View::Dithering::TEMPORAL : View::Dithering::NONE);
     mView->setAntiAliasing(mEnableFxaa ? View::AntiAliasing::FXAA : View::AntiAliasing::NONE);
     mView->setSampleCount(mEnableMsaa ? 4 : 1);
     mView->setAmbientOcclusion(
             mEnableSsao ? View::AmbientOcclusion::SSAO : View::AmbientOcclusion::NONE);
+    mView->setBloomOptions(mBloomOptions);
 
     if (ImGui::CollapsingHeader("Light", headerFlags)) {
         ImGui::SliderFloat("IBL intensity", &mIblIntensity, 0.0f, 100000.0f);
@@ -461,7 +474,7 @@ void SimpleViewer::updateUserInterface() {
                     ImGui::TreePop();
                 }
             }
-            ImGui::Checkbox("Wireframe", &mEnableWireframe);
+            ImGui::Checkbox("Show bounds", &mEnableWireframe);
             treeNode(mAsset->getRoot());
         }
 
