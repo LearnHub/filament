@@ -127,6 +127,13 @@ namespace emscripten {
         BIND(utils::EntityManager)
         BIND(VertexBuffer)
         BIND(View)
+
+        // Permit use of Texture* inside emscripten::value_object.
+        template<> struct TypeID<Texture*> {
+            static constexpr TYPEID get() {
+                return LightTypeID<Texture>::get();
+            }
+        };
     }
 }
 #undef BIND
@@ -275,6 +282,25 @@ value_object<Box>("Box")
 value_object<filament::Aabb>("Aabb")
     .field("min", &filament::Aabb::min)
     .field("max", &filament::Aabb::max);
+
+value_object<filament::View::AmbientOcclusionOptions>("View$AmbientOcclusionOptions")
+    .field("radius", &filament::View::AmbientOcclusionOptions::radius)
+    .field("power", &filament::View::AmbientOcclusionOptions::power)
+    .field("bias", &filament::View::AmbientOcclusionOptions::bias)
+    .field("resolution", &filament::View::AmbientOcclusionOptions::resolution)
+    .field("intensity", &filament::View::AmbientOcclusionOptions::intensity)
+    .field("quality", &filament::View::AmbientOcclusionOptions::quality);
+
+value_object<filament::View::BloomOptions>("View$BloomOptions")
+    .field("dirtStrength", &filament::View::BloomOptions::dirtStrength)
+    .field("strength", &filament::View::BloomOptions::strength)
+    .field("resolution", &filament::View::BloomOptions::resolution)
+    .field("anamorphism", &filament::View::BloomOptions::anamorphism)
+    .field("levels", &filament::View::BloomOptions::levels)
+    .field("threshold", &filament::View::BloomOptions::threshold)
+    .field("enabled", &filament::View::BloomOptions::enabled)
+    .field("blendMode", &filament::View::BloomOptions::blendMode)
+    .field("dirt", &filament::View::BloomOptions::dirt);
 
 // In JavaScript, a flat contiguous representation is best for matrices (see gl-matrix) so we
 // need to define a small wrapper here.
@@ -465,6 +491,10 @@ class_<View>("View")
     .function("setViewport", &View::setViewport)
     .function("setClearColor", &View::setClearColor)
     .function("setPostProcessingEnabled", &View::setPostProcessingEnabled)
+    .function("_setAmbientOcclusionOptions", &View::setAmbientOcclusionOptions)
+    .function("_setBloomOptions", &View::setBloomOptions)
+    .function("setAmbientOcclusion", &View::setAmbientOcclusion)
+    .function("getAmbientOcclusion", &View::getAmbientOcclusion)
     .function("setAntiAliasing", &View::setAntiAliasing)
     .function("getAntiAliasing", &View::getAntiAliasing)
     .function("setSampleCount", &View::setSampleCount)
@@ -522,15 +552,7 @@ class_<Camera>("Camera")
         self->setProjection(fovInDegrees, aspect, near, far, direction);
     }), allow_raw_pointers())
 
-    .function("setLensProjectionWithAspect", EMBIND_LAMBDA(void, (Camera* self,
-                double focalLength, double aspect, double near, double far), {
-        self->setLensProjection(focalLength, aspect, near, far);
-    }), allow_raw_pointers())
-
-    .function("setLensProjection", EMBIND_LAMBDA(void, (Camera* self,
-                double focalLength, double near, double far), {
-        self->setLensProjection(focalLength, near, far);
-    }), allow_raw_pointers())
+    .function("setLensProjection", &Camera::setLensProjection)
 
     .function("setCustomProjection", EMBIND_LAMBDA(void, (Camera* self,
             flatmat4 m, double near, double far), {
@@ -618,6 +640,26 @@ class_<RenderableBuilder>("RenderableManager$Builder")
             VertexBuffer* vertices,
             IndexBuffer* indices), {
         return &builder->geometry(index, type, vertices, indices); })
+
+    .BUILDER_FUNCTION("geometryOffset", RenderableBuilder, (RenderableBuilder* builder,
+            size_t index,
+            RenderableManager::PrimitiveType type,
+            VertexBuffer* vertices,
+            IndexBuffer* indices,
+            size_t offset,
+            size_t count), {
+        return &builder->geometry(index, type, vertices, indices, offset, count); })
+
+    .BUILDER_FUNCTION("geometryMinMax", RenderableBuilder, (RenderableBuilder* builder,
+            size_t index,
+            RenderableManager::PrimitiveType type,
+            VertexBuffer* vertices,
+            IndexBuffer* indices,
+            size_t offset,
+            size_t minIndex,
+            size_t maxIndex,
+            size_t count), {
+        return &builder->geometry(index, type, vertices, indices, offset, minIndex, maxIndex, count); })
 
     .BUILDER_FUNCTION("material", RenderableBuilder, (RenderableBuilder* builder,
             size_t index, MaterialInstance* mi), {
@@ -912,8 +954,8 @@ class_<VertexBuilder>("VertexBuffer$Builder")
 class_<VertexBuffer>("VertexBuffer")
     .class_function("Builder", (VertexBuilder (*)()) [] { return VertexBuilder(); })
     .function("_setBufferAt", EMBIND_LAMBDA(void, (VertexBuffer* self,
-            Engine* engine, uint8_t bufferIndex, BufferDescriptor vbd), {
-        self->setBufferAt(*engine, bufferIndex, std::move(*vbd.bd));
+            Engine* engine, uint8_t bufferIndex, BufferDescriptor vbd, uint32_t byteOffset), {
+        self->setBufferAt(*engine, bufferIndex, std::move(*vbd.bd), byteOffset);
     }), allow_raw_pointers());
 
 class_<IndexBuilder>("IndexBuffer$Builder")
@@ -930,8 +972,8 @@ class_<IndexBuilder>("IndexBuffer$Builder")
 class_<IndexBuffer>("IndexBuffer")
     .class_function("Builder", (IndexBuilder (*)()) [] { return IndexBuilder(); })
     .function("_setBuffer", EMBIND_LAMBDA(void, (IndexBuffer* self,
-            Engine* engine, BufferDescriptor ibd), {
-        self->setBuffer(*engine, std::move(*ibd.bd));
+            Engine* engine, BufferDescriptor ibd, uint32_t byteOffset), {
+        self->setBuffer(*engine, std::move(*ibd.bd), byteOffset);
     }), allow_raw_pointers());
 
 class_<Material>("Material")

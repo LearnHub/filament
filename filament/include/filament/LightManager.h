@@ -80,7 +80,7 @@ class FLightManager;
  * parallel and come from infinitely far away and from everywhere. Typically a directional light
  * is used to simulate the sun.
  *
- * Directional lights are able to cast shadows.
+ * Directional lights and spot lights are able to cast shadows.
  *
  * To create a directional light use Type.DIRECTIONAL or Type.SUN, both are similar, but the later
  * also draws a sun's disk in the sky and its reflection on glossy objects.
@@ -116,7 +116,7 @@ class FLightManager;
  * changing volume. The coupling of illumination and the outer cone means that an artist cannot
  * tweak the influence cone of a spot light without also changing the perceived illumination.
  * It therefore makes sense to provide artists with a parameter to disable this coupling. This
- * is the difference between Type.SPOT and Type.FOCUSED_SPOT.
+ * is the difference between Type.FOCUSED_SPOT and Type.SPOT.
  *
  * @see Builder.position(), Builder.direction(), Builder.falloff(), Builder.spotLightCone()
  *
@@ -169,8 +169,8 @@ public:
         SUN,            //!< Directional light that also draws a sun's disk in the sky.
         DIRECTIONAL,    //!< Directional light, emits light in a given direction.
         POINT,          //!< Point light, emits light from a position, in all directions.
-        FOCUSED_SPOT,   //!< Spot light with coupling of outer cone and illumination disabled.
-        SPOT,           //!< Physically correct spot light.
+        FOCUSED_SPOT,   //!< Physically correct spot light.
+        SPOT,           //!< Spot light with coupling of outer cone and illumination disabled.
     };
 
     /**
@@ -233,6 +233,27 @@ public:
          * Setting this value correctly is essential for LISPSM shadow-maps.
          */
         float polygonOffsetSlope = 2.0f;
+
+        /**
+         * Whether screen-space contact shadows are used. This applies regardless of whether a
+         * Renderable is a shadow caster. This setting is currently only used for directional
+         * lights, ignored otherwise.
+         * Screen-space contact shadows are typically useful in large scenes.
+         * (off by default)
+         */
+        bool screenSpaceContactShadows = false;
+
+        /**
+         * Number of ray-marching steps for screen-space contact shadows.
+         * (8 by default)
+         */
+        uint8_t stepCount = 8;
+
+        /**
+         * Maximum shadow-occluder distance for screen-space contact shadows (world units).
+         * (30 cm by default)
+         */
+        float maxShadowDistance = 0.3;
     };
 
     //! Use Builder to construct a Light object instance
@@ -259,7 +280,7 @@ public:
          * @return This Builder, for chaining calls.
          *
          * @warning
-         * - Only a Type.DIRECTIONAL or Type.SUN light can cast shadows
+         * - Only a Type.DIRECTIONAL, Type.SUN, Type.SPOT, or Type.FOCUSED_SPOT light can cast shadows
          */
         Builder& castShadows(bool enable) noexcept;
 
@@ -617,6 +638,8 @@ public:
      */
     void setSpotLightCone(Instance i, float inner, float outer) noexcept;
 
+    float getSpotLightOuterCone(Instance i) const noexcept;
+
     /**
      * Dynamically updates the angular radius of a Type.SUN light
      *
@@ -688,7 +711,7 @@ public:
      * @param shadowCaster Enables or disables casting shadows from this Light.
      *
      * @warning
-     * - Only a Type.DIRECTIONAL or Type.SUN light can cast shadows
+     * - Only a Type.DIRECTIONAL, Type.SUN, Type.SPOT, or Type.FOCUSED_SPOT light can cast shadows
      */
     void setShadowCaster(Instance i, bool shadowCaster) noexcept;
 

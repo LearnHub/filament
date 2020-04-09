@@ -83,43 +83,25 @@ public:
      * enabled:   enable or disables dynamic resolution on a View
      * homogeneousScaling: by default the system scales the major axis first. Set this to true
      *                     to force homogeneous scaling.
-     * scaleRate: rate at which the scale will change to reach the target frame rate
-     *            This value can be computed as 1 / N, where N is the number of frames
-     *            needed to reach 64% of the target scale factor.
-     *            Higher values make the dynamic resolution react faster.
-     * targetFrameTimeMilli: desired frame time in milliseconds
-     * headRoomRatio: additional headroom for the GPU as a ratio of the targetFrameTime.
-     *                Useful for taking into account constant costs like post-processing or
-     *                GPU drivers on different platforms.
-     * history:   History size. higher values, tend to filter more (clamped to 30)
      * minScale:  the minimum scale in X and Y this View should use
      * maxScale:  the maximum scale in X and Y this View should use
+     * quality:   upscaling quality.
+     *            LOW: 1 bilinear tap, Medium: 4 bilinear taps, High: 9 bilinear taps (tent)
      *
      * \note
      * Dynamic resolution is only supported on platforms where the time to render
      * a frame can be measured accurately. Dynamic resolution is currently only
      * supported on Android.
+     *
+     * @see Renderer::FrameRateOptions
+     *
      */
     struct DynamicResolutionOptions {
-        DynamicResolutionOptions() = default;
-
-        DynamicResolutionOptions(bool enabled, float scaleRate,
-                math::float2 minScale, math::float2 maxScale)
-                : minScale(minScale), maxScale(maxScale),
-                  scaleRate(scaleRate), enabled(enabled) {
-            // this one exists for backward compatibility
-        }
-
-        explicit DynamicResolutionOptions(bool enabled) : enabled(enabled) { }
-
         math::float2 minScale = math::float2(0.5f);     //!< minimum scale factors in x and y
         math::float2 maxScale = math::float2(1.0f);     //!< maximum scale factors in x and y
-        float scaleRate = 0.125f;                       //!< rate at which the scale will change
-        float targetFrameTimeMilli = 1000.0f / 60.0f;   //!< desired frame time, or budget.
-        float headRoomRatio = 0.0f;                     //!< additional headroom for the GPU
-        uint8_t history = 9;                            //!< history size
         bool enabled = false;                           //!< enable or disable dynamic resolution
         bool homogeneousScaling = false;                //!< set to true to force homogeneous scaling
+        QualityLevel quality = QualityLevel::LOW;       //!< Upscaling quality
     };
 
     /**
@@ -151,15 +133,31 @@ public:
             ADD,           //!< Bloom is modulated by the strength parameter and added to the scene
             INTERPOLATE    //!< Bloom is interpolated with the scene using the strength parameter
         };
-        Texture* dirt = nullptr;                //!< User provided dirt texture
+        Texture* dirt = nullptr;                //!< user provided dirt texture
         float dirtStrength = 0.2f;              //!< strength of the dirt texture
-        float strength = 0.10f;                 //!< Between 0.0 and 1.0
-        uint32_t resolution = 360;              //!< Resolution of minor axis (2^levels to 4096)
-        float anamorphism = 1.0f;               //!< Bloom x/y aspect-ratio (1/32 to 32)
+        float strength = 0.10f;                 //!< bloom's strength between 0.0 and 1.0
+        uint32_t resolution = 360;              //!< resolution of minor axis (2^levels to 4096)
+        float anamorphism = 1.0f;               //!< bloom x/y aspect-ratio (1/32 to 32)
         uint8_t levels = 6;                     //!< number of blur levels (3 to 12)
-        BlendMode blendMode = BlendMode::ADD;   //!< How the bloom effect is applied
-        bool threshold = true;                  //!< Whether to threshold the source
+        BlendMode blendMode = BlendMode::ADD;   //!< how the bloom effect is applied
+        bool threshold = true;                  //!< whether to threshold the source
         bool enabled = false;                   //!< enable or disable bloom
+    };
+
+    /**
+     * Options to control fog in the scene
+     */
+    struct FogOptions {
+        float distance = 0.0f;              //!< distance in world units from the camera where the fog starts ( >= 0.0 )
+        float maximumOpacity = 1.0f;        //!< fog's maximum opacity between 0 and 1
+        float height = 0.0f;                //!< fog's floor in world units
+        float heightFalloff = 1.0f;         //!< how fast fog dissipates with altitude
+        math::float3 color{ 0.5f };         //!< fog's color (linear), see fogColorFromIbl
+        float density = 0.1f;               //!< fog's density at altitude given by 'height'
+        float inScatteringStart = 0.0f;     //!< distance in world units from the camera where in-scattering starts
+        float inScatteringSize = -1.0f;     //!< size of in-scattering (>=0 to activate). Good values are >> 1 (e.g. ~10 - 100).
+        bool fogColorFromIbl = false;       //!< Fog color will be modulated by the IBL color in the view direction.
+        bool enabled = false;               //!< enable or disable fog
     };
 
     /**
@@ -494,9 +492,16 @@ public:
     /**
      * Enables or disables bloom in the post-processing stage. Disabled by default.
      *
-     * @param bloom options
+     * @param options options
      */
     void setBloomOptions(BloomOptions options) noexcept;
+
+    /**
+     * Enables or disables fog. Disabled by default.
+     *
+     * @param options options
+     */
+    void setFogOptions(FogOptions options) noexcept;
 
     /**
      * Queries the bloom options.

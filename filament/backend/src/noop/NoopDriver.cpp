@@ -91,6 +91,12 @@ void NoopDriver::destroySwapChain(Handle<HwSwapChain> sch) {
 void NoopDriver::destroyStream(Handle<HwStream> sh) {
 }
 
+void NoopDriver::destroyTimerQuery(Handle<HwTimerQuery> tqh) {
+}
+
+void NoopDriver::destroySync(Handle<HwSync> fh) {
+}
+
 Handle<HwStream> NoopDriver::createStreamNative(void* nativeStream) {
     return {};
 }
@@ -165,6 +171,14 @@ void NoopDriver::setupExternalImage(void* image) {
 void NoopDriver::cancelExternalImage(void* image) {
 }
 
+bool NoopDriver::getTimerQueryValue(Handle<HwTimerQuery> tqh, uint64_t* elapsedTime) {
+    return false;
+}
+
+SyncStatus NoopDriver::getSyncStatus(Handle<HwSync> sh) {
+    return SyncStatus::SIGNALED;
+}
+
 void NoopDriver::setExternalImage(Handle<HwTexture> th, void* image) {
 }
 
@@ -192,11 +206,6 @@ void NoopDriver::beginRenderPass(Handle<HwRenderTarget> rth, const RenderPassPar
 }
 
 void NoopDriver::endRenderPass(int) {
-}
-
-void NoopDriver::discardSubRenderTargetBuffers(Handle<HwRenderTarget> rth,
-        TargetBufferFlags buffers,
-        uint32_t left, uint32_t bottom, uint32_t width, uint32_t height) {
 }
 
 void NoopDriver::setRenderPrimitiveBuffer(Handle<HwRenderPrimitive> rph,
@@ -258,6 +267,12 @@ void NoopDriver::blit(TargetBufferFlags buffers,
 }
 
 void NoopDriver::draw(PipelineState pipelineState, Handle<HwRenderPrimitive> rph) {
+}
+
+void NoopDriver::beginTimerQuery(Handle<HwTimerQuery> tqh) {
+}
+
+void NoopDriver::endTimerQuery(Handle<HwTimerQuery> tqh) {
 }
 
 } // namespace filament

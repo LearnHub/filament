@@ -52,7 +52,28 @@ export interface Aabb {
     max: float3;
 }
 
-// TODO: Remove the entity type and just use integers for better parity with Java.
+export interface View$AmbientOcclusionOptions {
+    radius?: number;
+    power?: number;
+    bias?: number;
+    resolution?: number;
+    intensity?: number;
+    quality?: View$QualityLevel;
+}
+
+export interface View$BloomOptions {
+    dirtStrength?: number;
+    strength?: number;
+    resolution?: number;
+    anamorphism?: number;
+    levels?: number;
+    blendMode?: View$BloomOptions$BlendMode;
+    threshold?: boolean;
+    enabled?: boolean;
+    dirt?: Texture|null;
+}
+
+// TODO: Remove the entity type and just use integers for parity with Filament's Java bindings.
 export class Entity {
     public getId(): number;
 }
@@ -104,10 +125,8 @@ export class EntityManager {
 export class VertexBuffer$Builder {
     public vertexCount(count: number): VertexBuffer$Builder;
     public bufferCount(count: number): VertexBuffer$Builder;
-    public attribute(attrib: VertexAttribute,
-                        bufindex: number,
-                        atype: VertexBuffer$AttributeType,
-                        offset: number, stride: number): VertexBuffer$Builder;
+    public attribute(attrib: VertexAttribute, bufindex: number, atype: VertexBuffer$AttributeType,
+            offset: number, stride: number): VertexBuffer$Builder;
     public normalized(attrib: VertexAttribute): VertexBuffer$Builder;
     public normalizedIf(attrib: VertexAttribute, normalized: boolean): VertexBuffer$Builder;
     public build(engine: Engine): VertexBuffer;
@@ -120,10 +139,12 @@ export class IndexBuffer$Builder {
 }
 
 export class RenderableManager$Builder {
-    public geometry(slot: number,
-        ptype: RenderableManager$PrimitiveType,
-        vb: VertexBuffer,
-        ib: IndexBuffer): RenderableManager$Builder;
+    public geometry(slot: number, ptype: RenderableManager$PrimitiveType, vb: VertexBuffer,
+            ib: IndexBuffer): RenderableManager$Builder;
+    public geometryOffset(slot: number, ptype: RenderableManager$PrimitiveType, vb: VertexBuffer,
+            ib: IndexBuffer, offset: number, count: number): RenderableManager$Builder;
+    public geometryMinMax(slot: number, ptype: RenderableManager$PrimitiveType, vb: VertexBuffer,
+            ib: IndexBuffer, offset: number, minIndex: number, maxIndex: number, count: number): RenderableManager$Builder;
     public material(geo: number, minstance: MaterialInstance): RenderableManager$Builder;
     public boundingBox(box: Box): RenderableManager$Builder;
     public layerMask(select: number, values: number): RenderableManager$Builder;
@@ -228,12 +249,12 @@ export class RenderableManager {
 
 export class VertexBuffer {
     public static Builder(): VertexBuffer$Builder;
-    public setBufferAt(engine: Engine, bufindex: number, f32array: any): void;
+    public setBufferAt(engine: Engine, bufindex: number, f32array: any, byteOffset?: number): void;
 }
 
 export class IndexBuffer {
     public static Builder(): IndexBuffer$Builder;
-    public setBuffer(engine: Engine, u16array: any): void;
+    public setBuffer(engine: Engine, u16array: any, byteOffset?: number): void;
 }
 
 export class Renderer {
@@ -256,11 +277,10 @@ export class Frustum {
 
 export class Camera {
     public setProjection(proj: Camera$Projection, left: number, right: number, bottom: number,
-        top: number, near: number, far: number): void;
+            top: number, near: number, far: number): void;
     public setProjectionFov(fovInDegrees: number, aspect: number,
-        near: number, far: number, fov: Camera$Fov): void;
-    public setLensProjection(focalLength: number, near: number, far: number): void;
-    public setLensProjectionWithAspect(focalLength: number, aspect: number, near: number, far: number): void;
+            near: number, far: number, fov: Camera$Fov): void;
+    public setLensProjection(focalLength: number, aspect: number, near: number, far: number): void;
     public setCustomProjection(projection: mat4, near: number, far: number): void;
     public getProjectionMatrix(): mat4;
     public getCullingProjectionMatrix(): mat4;
@@ -331,6 +351,10 @@ export class View {
     public setScene(scene: Scene): void;
     public setViewport(viewport: float4): void;
     public setRenderTarget(renderTarget: RenderTarget): void;
+    public setAmbientOcclusionOptions(options: View$AmbientOcclusionOptions): void;
+    public setBloomOptions(options: View$BloomOptions): void;
+    public setAmbientOcclusion(enable: boolean): void;
+    public getAmbientOcclusion(): boolean;
 }
 
 export class TransformManager {
@@ -363,6 +387,7 @@ export class Engine {
     public createSwapChain(): SwapChain;
     public createTextureFromJpeg(url: string): Texture;
     public createTextureFromPng(url: string): Texture;
+    public createTextureFromKtx(url: string, options?: object): Texture;
     public createView(): View;
 
     public createAssetLoader(): gltfio$AssetLoader;
@@ -542,6 +567,8 @@ export enum PixelDataType {
     INT,
     HALF,
     FLOAT,
+    UINT_10F_11F_11F_REV,
+    USHORT_565,
 }
 
 export enum RenderableManager$PrimitiveType {
@@ -750,6 +777,23 @@ export enum View$AntiAliasing {
     FXAA,
 }
 
+export enum View$QualityLevel {
+    LOW,
+    MEDIUM,
+    HIGH,
+    ULTRA,
+}
+
+export enum View$AmbientOcclusion {
+    NONE,
+    SSAO,
+}
+
+export enum View$BloomOptions$BlendMode {
+    ADD,
+    INTERPOLATE,
+}
+
 export enum WrapMode {
     CLAMP_TO_EDGE,
     REPEAT,
@@ -767,7 +811,18 @@ interface HeapInterface {
 export const HEAPU8 : HeapInterface;
 
 export class SurfaceOrientation$Builder {
+    public constructor();
     public vertexCount(count: number): SurfaceOrientation$Builder;
     public normals(count: number, stride: number): SurfaceOrientation$Builder;
-    public build(): any;
+    public uvs(uvs: number, stride: number): SurfaceOrientation$Builder;
+    public positions(positions: number, stride: number): SurfaceOrientation$Builder;
+    public triangleCount(count: number): SurfaceOrientation$Builder;
+    public triangles16(triangles: number): SurfaceOrientation$Builder;
+    public triangles32(triangles: number): SurfaceOrientation$Builder;
+    public build(): SurfaceOrientation;
+}
+
+export class SurfaceOrientation {
+    public getQuats(out: number, quatCount: number, attrType: VertexBuffer$AttributeType);
+    public delete();
 }

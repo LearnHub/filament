@@ -21,6 +21,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.Size;
 
+import java.util.EnumSet;
+
 import static com.google.android.filament.Colors.LinearColor;
 
 /**
@@ -64,6 +66,7 @@ public class View {
     private RenderQuality mRenderQuality;
     private AmbientOcclusionOptions mAmbientOcclusionOptions;
     private BloomOptions mBloomOptions;
+    private FogOptions mFogOptions;
     private RenderTarget mRenderTarget;
 
     /**
@@ -105,21 +108,6 @@ public class View {
         public boolean homogeneousScaling = false;
 
         /**
-         * Desired frame time in milliseconds.
-         */
-        public float targetFrameTimeMilli = 1000.0f / 60.0f;
-
-        /**
-         * Additional headroom for the GPU as a ratio of the targetFrameTime.
-         */
-        public float headRoomRatio = 0.0f;
-
-        /**
-         * Rate at which the scale will change to reach the target frame rate.
-         */
-        public float scaleRate = 0.125f;
-
-        /**
          * The minimum scale in X and Y this View should use.
          */
         public float minScale = 0.5f;
@@ -130,9 +118,12 @@ public class View {
         public float maxScale = 1.0f;
 
         /**
-         * History size. higher values, tend to filter more (clamped to 30).
+         * Upscaling quality. LOW: 1 bilinear taps, MEDIUM: 4 bilinear taps, HIGH: 9 bilinear taps.
+         * If minScale needs to be very low, it might help to use MEDIUM or HIGH here.
+         * The default upsacling quality is set to LOW.
          */
-        public int history = 9;
+        @NonNull
+        public QualityLevel quality = QualityLevel.LOW;
     }
 
     /**
@@ -256,6 +247,64 @@ public class View {
     }
 
     /**
+     * Options to control fog in the scene
+     *
+     * @see View#setFogOptions
+     */
+    public static class FogOptions {
+        /**
+         * distance in world units from the camera where the fog starts ( >= 0.0 )
+         */
+        public float distance = 0.0f;
+
+        /**
+         * fog's maximum opacity between 0 and 1
+         */
+        public float maximumOpacity = 1.0f;
+
+        /**
+         * fog's floor in world units
+         */
+        public float height = 0.0f;
+
+        /**
+         * how fast fog dissipates with altitude
+         */
+        public float heightFalloff = 1.0f;
+
+        /**
+         * fog's color (linear)
+         */
+        @NonNull
+        public float[] color = { 0.5f, 0.5f, 0.5f };
+
+        /**
+         * fog's density at altitude given by 'height'
+         */
+        public float density = 0.1f;
+
+        /**
+         * distance in world units from the camera where in-scattering starts
+         */
+        public float inScatteringStart = 0.0f;
+
+        /**
+         * size of in-scattering (>=0 to activate). Good values are >> 1 (e.g. ~10 - 100)
+         */
+        public float inScatteringSize = 0.0f;
+
+        /**
+         * fog color will be modulated by the IBL color in the view direction
+         */
+        public boolean fogColorFromIbl = false;
+
+        /**
+         * enable or disable fog
+         */
+        public boolean enabled = false;
+    }
+
+    /**
      * Structure used to set the color precision for the rendering of a <code>View</code>.
      *
      * <p>
@@ -328,6 +377,69 @@ public class View {
     public enum Dithering {
         NONE,
         TEMPORAL
+    }
+
+    /**
+     * Used to select buffers.
+     */
+    public enum TargetBufferFlags {
+        /**
+         * Color 0 buffer selected.
+         */
+        COLOR0(0x1),
+        /**
+         * Color 1 buffer selected.
+         */
+        COLOR1(0x2),
+        /**
+         * Color 2 buffer selected.
+         */
+        COLOR2(0x4),
+        /**
+         * Color 3 buffer selected.
+         */
+        COLOR3(0x8),
+        /**
+         * Depth buffer selected.
+         */
+        DEPTH(0x10),
+        /**
+         * Stencil buffer selected.
+         */
+        STENCIL(0x20);
+
+        /*
+         * No buffer selected
+         */
+        public static EnumSet<TargetBufferFlags> NONE = EnumSet.noneOf(TargetBufferFlags.class);
+
+        /*
+         * All color buffers selected
+         */
+        public static EnumSet<TargetBufferFlags> ALL_COLOR =
+                EnumSet.of(COLOR0, COLOR1, COLOR2, COLOR3);
+        /**
+         * Depth and stencil buffer selected.
+         */
+        public static EnumSet<TargetBufferFlags> DEPTH_STENCIL = EnumSet.of(DEPTH, STENCIL);
+        /**
+         * All buffers are selected.
+         */
+        public static EnumSet<TargetBufferFlags> ALL = EnumSet.range(COLOR0, STENCIL);
+
+        private int mFlags;
+
+        TargetBufferFlags(int flags) {
+            mFlags = flags;
+        }
+
+        static int flags(EnumSet<TargetBufferFlags> flags) {
+            int result = 0;
+            for (TargetBufferFlags flag : flags) {
+                result |= flag.mFlags;
+            }
+            return result;
+        }
     }
 
     View(long nativeView) {
@@ -518,12 +630,33 @@ public class View {
      * By default, the view's associated render target is null, which corresponds to the
      * SwapChain associated with the engine.
      * </p>
+     * <p>
+     * This method discards the content of all the buffers in the render target. See
+     * {@link #setRenderTarget(RenderTarget, EnumSet)} if you need more precise control.
+     * </p>
      *
      * @param target render target associated with view, or null for the swap chain
      */
     public void setRenderTarget(@Nullable RenderTarget target) {
+        setRenderTarget(target, TargetBufferFlags.ALL);
+    }
+
+    /**
+     * Specifies an offscreen render target to render into.
+     *
+     * <p>
+     * By default, the view's associated render target is null, which corresponds to the
+     * SwapChain associated with the engine.
+     * </p>
+     *
+     * @param target render target associated with view, or null for the swap chain
+     * @param flags buffers that need to be discarded before rendering.
+     */
+    public void setRenderTarget(@Nullable RenderTarget target,
+            @NonNull EnumSet<TargetBufferFlags> flags) {
         mRenderTarget = target;
-        nSetRenderTarget(getNativeObject(), target != null ? target.getNativeObject() : 0);
+        nSetRenderTarget(getNativeObject(), target != null ? target.getNativeObject() : 0,
+                TargetBufferFlags.flags(flags));
     }
 
     /**
@@ -647,12 +780,9 @@ public class View {
         nSetDynamicResolutionOptions(getNativeObject(),
                 options.enabled,
                 options.homogeneousScaling,
-                options.targetFrameTimeMilli,
-                options.headRoomRatio,
-                options.scaleRate,
                 options.minScale,
                 options.maxScale,
-                options.history);
+                options.quality.ordinal());
     }
 
     /**
@@ -834,6 +964,20 @@ public class View {
     }
 
     /**
+     * Sets fog options.
+     *
+     * @param options Options for fog.
+     */
+    public void setFogOptions(@NonNull FogOptions options) {
+        mFogOptions = options;
+        nSetFogOptions(getNativeObject(), options.distance, options.maximumOpacity, options.height,
+                options.heightFalloff, options.color[0], options.color[1], options.color[2],
+                options.density, options.inScatteringStart, options.inScatteringSize,
+                options.fogColorFromIbl,
+                options.enabled);
+    }
+
+    /**
      * Gets the bloom options
      *
      * @return bloom options currently set.
@@ -866,7 +1010,7 @@ public class View {
     private static native void nSetClearTargets(long nativeView, boolean color, boolean depth, boolean stencil);
     private static native void nSetVisibleLayers(long nativeView, int select, int value);
     private static native void nSetShadowsEnabled(long nativeView, boolean enabled);
-    private static native void nSetRenderTarget(long nativeView, long nativeRenderTarget);
+    private static native void nSetRenderTarget(long nativeView, long nativeRenderTarget, int flags);
     private static native void nSetSampleCount(long nativeView, int count);
     private static native int nGetSampleCount(long nativeView);
     private static native void nSetAntiAliasing(long nativeView, int type);
@@ -875,10 +1019,7 @@ public class View {
     private static native int nGetToneMapping(long nativeView);
     private static native void nSetDithering(long nativeView, int dithering);
     private static native int nGetDithering(long nativeView);
-    private static native void nSetDynamicResolutionOptions(long nativeView,
-            boolean enabled, boolean homogeneousScaling,
-            float targetFrameTimeMilli, float headRoomRatio, float scaleRate,
-            float minScale, float maxScale, int history);
+    private static native void nSetDynamicResolutionOptions(long nativeView, boolean enabled, boolean homogeneousScaling, float minScale, float maxScale, int quality);
     private static native void nSetRenderQuality(long nativeView, int hdrColorBufferQuality);
     private static native void nSetDynamicLightingOptions(long nativeView, float zLightNear, float zLightFar);
     private static native void nSetPostProcessingEnabled(long nativeView, boolean enabled);
@@ -889,4 +1030,6 @@ public class View {
     private static native int nGetAmbientOcclusion(long nativeView);
     private static native void nSetAmbientOcclusionOptions(long nativeView, float radius, float bias, float power, float resolution, float intensity, int quality);
     private static native void nSetBloomOptions(long nativeView, long dirtNativeObject, float dirtStrength, float strength, int resolution, float anamorphism, int levels, int blendMode, boolean threshold, boolean enabled);
+    private static native void nSetFogOptions(long nativeView, float distance, float maximumOpacity, float height, float heightFalloff, float v, float v1, float v2, float density, float inScatteringStart, float inScatteringSize, boolean fogColorFromIbl, boolean enabled);
+
 }

@@ -6,7 +6,7 @@ void main() {
 #if defined(HAS_ATTRIBUTE_TANGENTS)
     // If the material defines a value for the "normal" property, we need to output
     // the full orthonormal basis to apply normal mapping
-    #if defined(MATERIAL_HAS_ANISOTROPY) || defined(MATERIAL_HAS_NORMAL) || defined(MATERIAL_HAS_CLEAR_COAT_NORMAL)
+    #if defined(MATERIAL_NEEDS_TBN)
         // Extract the normal and tangent in world space from the input quaternion
         // We encode the orthonormal basis as a quaternion to save space in the attributes
         toTangentFrame(mesh_tangents, material.worldNormal, vertex_worldTangent);
@@ -42,7 +42,7 @@ void main() {
         // normalization here since we'll do it after interpolation in the fragment stage
         vertex_worldBitangent =
                 cross(material.worldNormal, vertex_worldTangent) * sign(mesh_tangents.w);
-    #else // MATERIAL_HAS_ANISOTROPY || MATERIAL_HAS_NORMAL || MATERIAL_HAS_CLEAR_COAT_NORMAL
+    #else // MATERIAL_NEEDS_TBN
         // Without anisotropy or normal mapping we only need the normal vector
         toTangentFrame(mesh_tangents, material.worldNormal);
 
@@ -92,7 +92,17 @@ void main() {
 #endif
 
 #if defined(HAS_SHADOWING) && defined(HAS_DIRECTIONAL_LIGHTING)
-    vertex_lightSpacePosition = getLightSpacePosition(vertex_worldPosition, vertex_worldNormal);
+    vertex_lightSpacePosition = getLightSpacePosition(vertex_worldPosition, vertex_worldNormal,
+            frameUniforms.lightDirection, frameUniforms.shadowBias.y, getLightFromWorldMatrix());
+#endif
+
+#if defined(HAS_SHADOWING)
+    for (uint l = 0u; l < uint(MAX_SHADOW_CASTING_SPOTS); l++) {
+        vec3 dir = shadowUniforms.directionShadowBias[l].xyz;
+        float bias = shadowUniforms.directionShadowBias[l].w;
+        vertex_spotLightSpacePosition[l] = getLightSpacePosition(vertex_worldPosition,
+                vertex_worldNormal, dir, bias, getSpotLightFromWorldMatrix(l));
+    }
 #endif
 
 #if defined(VERTEX_DOMAIN_DEVICE)

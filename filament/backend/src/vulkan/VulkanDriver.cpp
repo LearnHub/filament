@@ -433,6 +433,10 @@ void VulkanDriver::createFenceR(Handle<HwFence> fh, int) {
      construct_handle<VulkanFence>(mHandleMap, fh, *mContext.currentCommands);
 }
 
+void VulkanDriver::createSyncR(Handle<HwSync> sh, int) {
+    // TODO: implement sync objects
+}
+
 void VulkanDriver::createSwapChainR(Handle<HwSwapChain> sch, void* nativeWindow,
         uint64_t flags) {
     auto* swapChain = construct_handle<VulkanSwapChain>(mHandleMap, sch);
@@ -455,6 +459,9 @@ void VulkanDriver::createSwapChainHeadlessR(Handle<HwSwapChain> sch,
 
 void VulkanDriver::createStreamFromTextureIdR(Handle<HwStream> sh, intptr_t externalTextureId,
         uint32_t width, uint32_t height) {
+}
+
+void VulkanDriver::createTimerQueryR(Handle<HwTimerQuery> tqh, int) {
 }
 
 Handle<HwVertexBuffer> VulkanDriver::createVertexBufferS() noexcept {
@@ -501,6 +508,11 @@ Handle<HwFence> VulkanDriver::createFenceS() noexcept {
     return alloc_handle<VulkanFence, HwFence>();
 }
 
+Handle<HwSync> VulkanDriver::createSyncS() noexcept {
+    // TODO: implement Sync ojbects
+    return {};
+}
+
 Handle<HwSwapChain> VulkanDriver::createSwapChainS() noexcept {
     return alloc_handle<VulkanSwapChain, HwSwapChain>();
 }
@@ -510,6 +522,10 @@ Handle<HwSwapChain> VulkanDriver::createSwapChainHeadlessS() noexcept {
 }
 
 Handle<HwStream> VulkanDriver::createStreamFromTextureIdS() noexcept {
+    return {};
+}
+
+Handle<HwTimerQuery> VulkanDriver::createTimerQueryS() noexcept {
     return {};
 }
 
@@ -558,6 +574,14 @@ void VulkanDriver::destroySwapChain(Handle<HwSwapChain> sch) {
 
 void VulkanDriver::destroyStream(Handle<HwStream> sh) {
 }
+
+void VulkanDriver::destroyTimerQuery(Handle<HwTimerQuery> tqh) {
+}
+
+void VulkanDriver::destroySync(Handle<HwSync> sh) {
+    // TODO: implement Sync objects
+}
+
 
 Handle<HwStream> VulkanDriver::createStreamNative(void* nativeStream) {
     return {};
@@ -682,6 +706,15 @@ void VulkanDriver::setupExternalImage(void* image) {
 }
 
 void VulkanDriver::cancelExternalImage(void* image) {
+}
+
+bool VulkanDriver::getTimerQueryValue(Handle<HwTimerQuery> tqh, uint64_t* elapsedTime) {
+    return false;
+}
+
+SyncStatus VulkanDriver::getSyncStatus(Handle<HwSync> sh) {
+    // TODO: implement Sync objects
+    return SyncStatus::SIGNALED;
 }
 
 void VulkanDriver::setExternalImage(Handle<HwTexture> th, void* image) {
@@ -823,11 +856,6 @@ void VulkanDriver::endRenderPass(int) {
     vkCmdEndRenderPass(mContext.currentCommands->cmdbuffer);
     mCurrentRenderTarget = VK_NULL_HANDLE;
     mContext.currentRenderPass.renderPass = VK_NULL_HANDLE;
-}
-
-void VulkanDriver::discardSubRenderTargetBuffers(Handle<HwRenderTarget> rth,
-        TargetBufferFlags buffers,
-        uint32_t left, uint32_t bottom, uint32_t width, uint32_t height) {
 }
 
 void VulkanDriver::setRenderPrimitiveBuffer(Handle<HwRenderPrimitive> rph,
@@ -1185,6 +1213,13 @@ void VulkanDriver::draw(PipelineState pipelineState, Handle<HwRenderPrimitive> r
     const int32_t vertexOffset = 0;
     const uint32_t firstInstId = 1;
     vkCmdDrawIndexed(cmdbuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstId);
+}
+
+
+void VulkanDriver::beginTimerQuery(Handle<HwTimerQuery> tqh) {
+}
+
+void VulkanDriver::endTimerQuery(Handle<HwTimerQuery> tqh) {
 }
 
 #ifndef NDEBUG

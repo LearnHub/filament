@@ -70,6 +70,8 @@ if (NOT FILAMENT_USE_EXTERNAL_GLES3)
             src/opengl/OpenGLProgram.cpp
             src/opengl/OpenGLProgram.h
             src/opengl/OpenGLPlatform.cpp
+            src/opengl/TimerQuery.cpp
+            src/opengl/TimerQuery.h
             include/private/backend/OpenGLPlatform.h
     )
     if (EGL)
@@ -111,6 +113,7 @@ if (FILAMENT_SUPPORTS_METAL)
             src/metal/MetalHandles.mm
             src/metal/MetalResourceTracker.cpp
             src/metal/MetalState.mm
+            src/metal/MetalTimerQuery.mm
             src/metal/PlatformMetal.mm
     )
 endif()
@@ -214,7 +217,7 @@ endif()
 # ==================================================================================================
 # Compiler flags
 # ==================================================================================================
-if (MSVC OR CLANG_CL)
+if (MSVC)
     set(OPTIMIZATION_FLAGS
         /fp:fast
     )
@@ -241,29 +244,21 @@ set(LINUX_COMPILER_FLAGS
         -fPIC
 )
 
-if (NOT MSVC_NATIVE)
+if (MSVC)
+    set(FILAMENT_WARNINGS /W3)
+else()
     set(FILAMENT_WARNINGS
-            -Wextra -Wno-unused-parameter
+            -Wall -Wextra -Wno-unused-parameter
             -Wextra-semi -Wnewline-eof -Wdeprecated -Wundef
             -Wgnu-conditional-omitted-operand
             -Wweak-vtables -Wnon-virtual-dtor -Wclass-varargs -Wimplicit-fallthrough
             -Wover-aligned
     )
-else()
-    set(FILAMENT_WARNINGS /W0)
 endif()
 
 if (APPLE)
     # Turn on Automatic Reference Counting.
     target_compile_options(${TARGET} PRIVATE "-fobjc-arc")
-endif()
-
-# clang-cl maps -Wall to -Weverything, which clutters logs with benign -Wc++98-compat warnings
-# Use /W4 instead for clang-cl builds
-if (CLANG_CL)
-    set(FILAMENT_WARNINGS /W4 ${FILAMENT_WARNINGS})
-else()
-    set(FILAMENT_WARNINGS -Wall ${FILAMENT_WARNINGS})
 endif()
 
 target_compile_options(${TARGET} PRIVATE

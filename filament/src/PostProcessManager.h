@@ -56,15 +56,18 @@ public:
     FrameGraphId<FrameGraphTexture> opaqueBlit(FrameGraph& fg,
             FrameGraphId<FrameGraphTexture> input, FrameGraphTexture::Descriptor outDesc) noexcept;
 
-    FrameGraphId <FrameGraphTexture> blendBlit(FrameGraph& fg,
-            FrameGraphId <FrameGraphTexture> input,
-            FrameGraphTexture::Descriptor outDesc) noexcept;
+    FrameGraphId<FrameGraphTexture> blendBlit(
+            FrameGraph& fg, bool translucent, View::QualityLevel quality,
+            FrameGraphId<FrameGraphTexture> input, FrameGraphTexture::Descriptor outDesc) noexcept;
 
     FrameGraphId<FrameGraphTexture> resolve(FrameGraph& fg,
             const char* outputBufferName, FrameGraphId<FrameGraphTexture> input) noexcept;
 
-    FrameGraphId<FrameGraphTexture> ssao(FrameGraph& fg, details::RenderPass& pass,
-            filament::Viewport const& svp,
+    FrameGraphId<FrameGraphTexture> structure(FrameGraph& fg, details::RenderPass const& pass,
+            uint32_t width, uint32_t height, float scale) noexcept;
+
+    FrameGraphId<FrameGraphTexture> screenSpaceAmbientOclusion(FrameGraph& fg,
+            details::RenderPass& pass, filament::Viewport const& svp,
             details::CameraInfo const& cameraInfo,
             View::AmbientOcclusionOptions const& options) noexcept;
 
@@ -82,9 +85,6 @@ public:
 
 private:
     details::FEngine& mEngine;
-
-    FrameGraphId<FrameGraphTexture> depthPass(FrameGraph& fg, details::RenderPass const& pass,
-            uint32_t width, uint32_t height, View::AmbientOcclusionOptions const& options) noexcept;
 
     FrameGraphId<FrameGraphTexture> mipmapPass(FrameGraph& fg,
             FrameGraphId<FrameGraphTexture> input, size_t level) noexcept;
@@ -115,7 +115,6 @@ private:
 
         details::FMaterial* getMaterial() const { return mMaterial; }
         details::FMaterialInstance* getMaterialInstance() const { return mMaterialInstance; }
-        backend::Handle<backend::HwProgram> const& getProgram() const { return mProgram; }
 
         backend::PipelineState getPipelineState(uint8_t variant) const noexcept;
         backend::PipelineState getPipelineState() const noexcept;
@@ -132,7 +131,7 @@ private:
     PostProcessMaterial mSeparableGaussianBlur;
     PostProcessMaterial mBloomDownsample;
     PostProcessMaterial mBloomUpsample;
-    PostProcessMaterial mBlit;
+    PostProcessMaterial mBlit[3];
     PostProcessMaterial mTonemapping;
     PostProcessMaterial mFxaa;
 

@@ -365,13 +365,6 @@ io::sstream& CodeGenerator::generateDefine(io::sstream& out, const char* name, b
     return out;
 }
 
-io::sstream& CodeGenerator::generateDefine(io::sstream& out, const char* name, float value) const {
-    char buffer[32];
-    snprintf(buffer, 32, "%.1f", value);
-    out << "#define " << name << " " << buffer << "\n";
-    return out;
-}
-
 io::sstream& CodeGenerator::generateDefine(io::sstream& out, const char* name, uint32_t value) const {
     out << "#define " << name << " " << value << "\n";
     return out;
@@ -379,14 +372,6 @@ io::sstream& CodeGenerator::generateDefine(io::sstream& out, const char* name, u
 
 io::sstream& CodeGenerator::generateDefine(io::sstream& out, const char* name, const char* string) const {
     out << "#define " << name << " " << string << "\n";
-    return out;
-}
-
-io::sstream& CodeGenerator::generateFunction(io::sstream& out, const char* returnType,
-        const char* name, const char* body) const {
-    out << "\n" << returnType << " " << name << "()";
-    out << " {\n" << body;
-    out << "\n}\n";
     return out;
 }
 
@@ -411,6 +396,14 @@ io::sstream& CodeGenerator::generateCommon(io::sstream& out, ShaderType type) co
         out << SHADERS_COMMON_SHADING_FS_DATA;
         out << SHADERS_COMMON_GRAPHICS_FS_DATA;
         out << SHADERS_COMMON_MATERIAL_FS_DATA;
+    }
+    return out;
+}
+
+io::sstream& CodeGenerator::generateFog(io::sstream& out, ShaderType type) const {
+    if (type == ShaderType::VERTEX) {
+    } else if (type == ShaderType::FRAGMENT) {
+        out << SHADERS_FOG_FS_DATA;
     }
     return out;
 }
@@ -544,6 +537,7 @@ char const* CodeGenerator::getConstantName(MaterialBuilder::Property property) n
         case Property::TRANSMISSION:         return "TRANSMISSION";
         case Property::IOR:                  return "IOR";
         case Property::MICRO_THICKNESS:      return "MICRO_THICKNESS";
+        case Property::BENT_NORMAL:          return "BENT_NORMAL";
     }
 }
 

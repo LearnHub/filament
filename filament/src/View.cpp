@@ -56,9 +56,14 @@ namespace details {
 FView::FView(FEngine& engine)
     : mFroxelizer(engine),
       mPerViewUb(PerViewUib::getUib().getSize()),
+      mShadowUb(ShadowUib::getUib().getSize()),
       mPerViewSb(PerViewSib::SAMPLER_COUNT),
       mDirectionalShadowMap(engine) {
     DriverApi& driver = engine.getDriverApi();
+
+    for (size_t i = 0; i < CONFIG_MAX_SHADOW_CASTING_SPOTS; i++) {
+        mSpotShadowMap[i] = std::make_unique<ShadowMap>(engine);
+    }
 
     FDebugRegistry& debugRegistry = engine.getDebugRegistry();
     debugRegistry.registerProperty("d.view.camera_at_origin",
@@ -77,6 +82,7 @@ FView::FView(FEngine& engine)
     // allocate ubos
     mPerViewUbh = driver.createUniformBuffer(mPerViewUb.getSize(), backend::BufferUsage::DYNAMIC);
     mLightUbh = driver.createUniformBuffer(CONFIG_MAX_LIGHT_COUNT * sizeof(LightsUib), backend::BufferUsage::DYNAMIC);
+    mShadowUbh = driver.createUniformBuffer(mShadowUb.getSize(), backend::BufferUsage::DYNAMIC);
 
     mIsDynamicResolutionSupported = driver.isFrameTimeSupported();
 }
@@ -88,9 +94,11 @@ void FView::terminate(FEngine& engine) {
     DriverApi& driver = engine.getDriverApi();
     driver.destroyUniformBuffer(mPerViewUbh);
     driver.destroyUniformBuffer(mLightUbh);
+    driver.destroyUniformBuffer(mShadowUbh);
     driver.destroySamplerGroup(mPerViewSbh);
     driver.destroyUniformBuffer(mRenderableUbh);
-    mDirectionalShadowMap.terminate(driver);
+
+    mShadowMapManager.terminate(driver);
     mFroxelizer.terminate(driver);
 }
 
@@ -110,24 +118,6 @@ void FView::setDynamicResolutionOptions(DynamicResolutionOptions const& options)
     if (dynamicResolution.enabled) {
         // if enabled, sanitize the parameters
 
-        // History can't be more than 32 frames (~0.5s)
-        dynamicResolution.history = std::min(dynamicResolution.history, uint8_t(MAX_FRAMETIME_HISTORY));
-
-        // History must at least be 3 frames
-        dynamicResolution.history = std::max(dynamicResolution.history, uint8_t(3));
-
-        // can't ask more 240 fps
-        dynamicResolution.targetFrameTimeMilli =
-                std::max(dynamicResolution.targetFrameTimeMilli, 1000.0f / 240.0f);
-
-        // can't ask less than 1 fps
-        dynamicResolution.targetFrameTimeMilli =
-                std::min(dynamicResolution.targetFrameTimeMilli, 1000.0f);
-
-        // headroom can't be larger than frame time, or less than 0
-        dynamicResolution.headRoomRatio = std::min(dynamicResolution.headRoomRatio, 1.0f);
-        dynamicResolution.headRoomRatio = std::max(dynamicResolution.headRoomRatio, 0.0f);
-
         // minScale cannot be 0 or negative
         dynamicResolution.minScale = max(dynamicResolution.minScale, float2(1.0f / 1024.0f));
 
@@ -137,11 +127,6 @@ void FView::setDynamicResolutionOptions(DynamicResolutionOptions const& options)
         // clamp maxScale to 2x because we're doing bilinear filtering, so super-sampling
         // is not useful above that.
         dynamicResolution.maxScale = min(dynamicResolution.maxScale, float2(2.0f));
-
-        // reset the history, so we start from a known (and current) state
-        mFrameTimeHistorySize = 0;
-        mScale = 1.0f;
-        mDynamicWorkloadScale = 1.0f;
     }
 }
 
@@ -149,58 +134,16 @@ void FView::setDynamicLightingOptions(float zLightNear, float zLightFar) noexcep
     mFroxelizer.setOptions(zLightNear, zLightFar);
 }
 
-// this is to avoid a call to memmove
-template<class InputIterator, class OutputIterator>
-static inline
-void move_backward(InputIterator first, InputIterator last, OutputIterator result) {
-    while (first != last) {
-        *--result = *--last;
-    }
-}
-
-float2 FView::updateScale(duration frameTime) noexcept {
+float2 FView::updateScale(FrameInfo const& info) noexcept {
     DynamicResolutionOptions const& options = mDynamicResolution;
     if (options.enabled) {
-
-        if (UTILS_UNLIKELY(frameTime.count() <= std::numeric_limits<float>::epsilon())) {
+        if (!UTILS_UNLIKELY(info.valid)) {
             mScale = 1.0f;
             return mScale;
         }
-
-        // keep an history of frame times
-        auto& history = mFrameTimeHistory;
-
-        // this is like doing { pop_back(); push_front(); }
-        details::move_backward(history.begin(), history.end() - 1, history.end());
-        history.front() = frameTime;
-        mFrameTimeHistorySize = std::min(++mFrameTimeHistorySize, size_t(MAX_FRAMETIME_HISTORY));
-
-        if (UTILS_UNLIKELY(mFrameTimeHistorySize < 3)) {
-            // don't make any decision if we don't have enough data
-            mScale = 1.0f;
-            return mScale;
-        }
-
-        // apply a median filter to get a good representation of the frame time of the last
-        // N frames.
-        std::array<duration, MAX_FRAMETIME_HISTORY> median; // NOLINT -- it's initialized below
-        size_t size = std::min(mFrameTimeHistorySize, median.size());
-        std::uninitialized_copy_n(history.begin(), size, median.begin());
-        std::sort(median.begin(), median.begin() + size);
-        duration filteredFrameTime = median[size / 2];
-
-        // how much we need to scale the current workload to fit in our target, at this instant
-        const float targetWithHeadroom = options.targetFrameTimeMilli * (1 - options.headRoomRatio);
-        const float workloadScale = targetWithHeadroom / filteredFrameTime.count();
-
-        // low-pass: y += b * (x - y)
-        const float oneOverTau = options.scaleRate;
-        const float x = mScale.x * mScale.y * workloadScale;
-        mDynamicWorkloadScale += (1.0f - std::exp(-oneOverTau)) * (x - mDynamicWorkloadScale);
 
         // scaling factor we need to apply on the whole surface
-        const float scale = mDynamicWorkloadScale;
-
+        const float scale = info.scale;
         const float w = mViewport.width;
         const float h = mViewport.height;
         if (scale < 1.0f && !options.homogeneousScaling) {
@@ -228,24 +171,22 @@ float2 FView::updateScale(duration frameTime) noexcept {
             mScale = std::sqrt(scale);
         }
 
-        // now tweak the scaling factor to get multiples of 4 (to help quad-shading)
-        mScale = (floor(mScale * float2{ w, h } / 4) * 4) / float2{ w, h };
+        // now tweak the scaling factor to get multiples of 8 (to help quad-shading)
+        // i.e. 8x8=64 fragments, to try to help with warp sizes.
+        mScale = (floor(mScale * float2{ w, h } / 8) * 8) / float2{ w, h };
 
         // always clamp to the min/max scale range
         mScale = clamp(mScale, options.minScale, options.maxScale);
 
 //#define DEBUG_DYNAMIC_RESOLUTION
-#if !defined(NDEBUG) && defined(DEBUG_DYNAMIC_RESOLUTION)
+#if defined(DEBUG_DYNAMIC_RESOLUTION)
         static int sLogCounter = 15;
         if (!--sLogCounter) {
             sLogCounter = 15;
-            slog.d << frameTime.count()
-                   << ", " << filteredFrameTime.count()
-                   << ", " << workloadScale
-                   << ", " << mDynamicWorkloadScale
+            slog.d << info.denoisedFrameTime.count() * 1000.0f << " ms"
+                   << ", " << info.smoothedWorkLoad
                    << ", " << mScale.x
                    << ", " << mScale.y
-                   << ", " << mScale.x * mScale.y
                    << ", " << mViewport.width  * mScale.x
                    << ", " << mViewport.height * mScale.y
                    << io::endl;
@@ -254,6 +195,7 @@ float2 FView::updateScale(duration frameTime) noexcept {
     } else {
         mScale = 1.0f;
     }
+
     return mScale;
 }
 
@@ -277,39 +219,56 @@ bool FView::isSkyboxVisible() const noexcept {
 }
 
 void FView::prepareShadowing(FEngine& engine, backend::DriverApi& driver,
-        FScene::RenderableSoa& renderableData, FScene::LightSoa const& lightData) noexcept {
+        FScene::RenderableSoa& renderableData, FScene::LightSoa& lightData) noexcept {
     SYSTRACE_CALL();
 
-    // setup shadow mapping
-    // TODO: for now we only consider THE directional light
+    mHasShadowing = false;
+
+    if (!mShadowingEnabled) {
+        return;
+    }
+
+    mShadowMapManager.reset();
 
     auto& lcm = engine.getLightManager();
 
     // dominant directional light is always as index 0
     FLightManager::Instance directionalLight = lightData.elementAt<FScene::LIGHT_INSTANCE>(0);
-    mHasShadowing = mShadowingEnabled && directionalLight && lcm.isShadowCaster(directionalLight);
-    if (UTILS_UNLIKELY(mHasShadowing)) {
-        // compute the frustum for this light
-        ShadowMap& shadowMap = mDirectionalShadowMap;
-        shadowMap.update(lightData, 0, mScene, mViewingCameraInfo, mVisibleLayers);
-        if (shadowMap.hasVisibleShadows()) {
-            // Cull shadow casters
-            UniformBuffer& u = mPerViewUb;
-            Frustum const& frustum = shadowMap.getCamera().getFrustum();
-            FView::prepareVisibleShadowCasters(engine.getJobSystem(), frustum, renderableData);
+    const bool hasDirectionalShadows = directionalLight && lcm.isShadowCaster(directionalLight);
+    if (UTILS_UNLIKELY(hasDirectionalShadows)) {
+        mShadowMapManager.setDirectionalShadowMap(mDirectionalShadowMap, 0);
+    }
 
-            // allocates shadowmap driver resources
-            shadowMap.prepare(driver, mPerViewSb);
+    // Find all shadow-casting spot lights.
+    size_t shadowCastingSpotCount = 0;
 
-            mat4f const& lightFromWorldMatrix = shadowMap.getLightSpaceMatrix();
-            u.setUniform(offsetof(PerViewUib, lightFromWorldMatrix), lightFromWorldMatrix);
+    // We allow a max of CONFIG_MAX_SHADOW_CASTING_SPOTS spot light shadows. Any additional
+    // shadow-casting spot lights are ignored.
+    for (size_t l = 1; l < lightData.size(); l++) {
+        FLightManager::Instance light = lightData.elementAt<FScene::LIGHT_INSTANCE>(l);
 
-            const float texelSizeWorldSpace = shadowMap.getTexelSizeWorldSpace();
-            const float normalBias = lcm.getShadowNormalBias(directionalLight);
-            u.setUniform(offsetof(PerViewUib, shadowBias),
-                    float3{ 0, normalBias * texelSizeWorldSpace, 0 });
+        // Invisible lights get culled and should not count towards the spot limit.
+        bool visible = lightData.elementAt<FScene::VISIBILITY>(l) != 0;
+
+        if (UTILS_LIKELY(!(light && lcm.isSpotLight(light) &&
+                lcm.isShadowCaster(light) && visible))) {
+            continue;
+        }
+
+        ShadowMap& shadowMap = *mSpotShadowMap[shadowCastingSpotCount];
+        mShadowMapManager.addSpotShadowMap(shadowMap, l);
+
+        shadowCastingSpotCount++;
+        if (shadowCastingSpotCount > CONFIG_MAX_SHADOW_CASTING_SPOTS - 1) {
+            break;
         }
     }
+
+    // allocates shadowmap driver resources
+    mShadowMapManager.prepare(engine, driver, mPerViewSb, lightData);
+
+    mHasShadowing = mShadowMapManager.update(engine, *this, mPerViewUb, mShadowUb, renderableData,
+            lightData);
 }
 
 void FView::prepareLighting(FEngine& engine, FEngine::DriverApi& driver, ArenaScope& arena,
@@ -347,8 +306,8 @@ void FView::prepareLighting(FEngine& engine, FEngine::DriverApi& driver, ArenaSc
     }
 
     // Set up uniforms and sampler for the IBL, guaranteed to be non-null at this point.
-    float2 iblMaxMipLevel{ ibl->getMaxMipLevel(), 1u << ibl->getMaxMipLevel() };
-    u.setUniform(offsetof(PerViewUib, iblMaxMipLevel), iblMaxMipLevel);
+    float iblRoughnessOneLevel = ibl->getLevelCount() - 1.0f;
+    u.setUniform(offsetof(PerViewUib, iblRoughnessOneLevel), iblRoughnessOneLevel);
     u.setUniform(offsetof(PerViewUib, iblLuminance), intensity * exposure);
     u.setUniformArray(offsetof(PerViewUib, iblSH), ibl->getSH(), 9);
     if (ibl->getReflectionMap()) {
@@ -505,18 +464,30 @@ void FView::prepare(FEngine& engine, backend::DriverApi& driver, ArenaScope& are
 
         /*
          * Shadowing: compute the shadow camera and cull shadow casters
-         * (this will set the VISIBLE_DIR_SHADOW_CASTER bit)
+         * (this will set the VISIBLE_DIR_SHADOW_CASTER bit and VISIBLE_SPOT_SHADOW_CASTER bits)
          */
 
+        // prepareShadowing relies on prepareVisibleLights().
+        js.waitAndRelease(prepareVisibleLightsJob);
         prepareShadowing(engine, driver, renderableData, scene->getLightData());
 
         /*
-         * partition the array of renderable w.r.t their visibility:
+         * Parition the SoA so that renderables are partitioned w.r.t their visibility into the
+         * following groups:
          *
-         * Sort the SoA so that invisible objects are first, then renderables,
-         * then both renderable and casters, then casters only -- this operation is somewhat heavy
-         * as it sorts the whole SoA. We use std::partition instead of sort(), which gives us
-         * O(3.N) instead of O(N.log(N)) application of swap().
+         * 1. renderables
+         * 2. renderables and directional shadow casters
+         * 3. directional shadow casters only
+         * 4. punctual light shadow casters only
+         * 5. invisible renderables
+         *
+         * Note that the first three groups are partitioned based only on the lowest two bits of the
+         * VISIBLE_MASK (VISIBLE_RENDERABLE and VISIBLE_DIR_SHADOW_CASTER), and thus can also
+         * contain punctual light shadow casters as well. The fourth group contains *only* punctual
+         * shadow casters.
+         *
+         * This operation is somewhat heavy as it sorts the whole SoA. We use std::partition instead
+         * of sort(), which gives us O(4.N) instead of O(N.log(N)) application of swap().
          */
 
         // calculate the sorting key for all elements, based on their visibility
@@ -527,15 +498,22 @@ void FView::prepare(FEngine& engine, backend::DriverApi& driver, ArenaScope& are
 
         auto const beginRenderables = renderableData.begin();
         auto beginCasters = partition(beginRenderables, renderableData.end(), VISIBLE_RENDERABLE);
-        auto beginCastersOnly = partition(beginCasters, renderableData.end(), VISIBLE_ALL);
-        auto endCastersOnly = partition(beginCastersOnly, renderableData.end(),
+        auto beginCastersOnly = partition(beginCasters, renderableData.end(),
+                VISIBLE_RENDERABLE | VISIBLE_DIR_SHADOW_CASTER);
+        auto beginSpotLightCastersOnly = partition(beginCastersOnly, renderableData.end(),
                 VISIBLE_DIR_SHADOW_CASTER);
+        auto endSpotLightCastersOnly = std::partition(beginSpotLightCastersOnly,
+                renderableData.end(), [](auto it) {
+                    return (it.template get<FScene::VISIBLE_MASK>() & VISIBLE_SPOT_SHADOW_CASTER);
+                });
 
         // convert to indices
-        uint32_t iEnd = uint32_t(endCastersOnly - beginRenderables);
+        uint32_t iEnd = uint32_t(beginSpotLightCastersOnly - beginRenderables);
+        uint32_t iSpotLightCastersEnd = uint32_t(endSpotLightCastersOnly - beginRenderables);
         mVisibleRenderables = Range{ 0, uint32_t(beginCastersOnly - beginRenderables) };
-        mVisibleShadowCasters = Range{ uint32_t(beginCasters - beginRenderables), iEnd };
-        merged = Range{ 0, iEnd };
+        mVisibleDirectionalShadowCasters = Range{ uint32_t(beginCasters - beginRenderables), iEnd };
+        mSpotLightShadowCasters = Range{ 0, iSpotLightCastersEnd };
+        merged = Range{ 0, iSpotLightCastersEnd };
 
         // update those UBOs
         const size_t size = merged.size() * sizeof(PerRenderableUib);
@@ -558,17 +536,39 @@ void FView::prepare(FEngine& engine, backend::DriverApi& driver, ArenaScope& are
      * Relies on FScene::prepare() and prepareVisibleLights()
      */
 
-    js.waitAndRelease(prepareVisibleLightsJob);
     prepareLighting(engine, driver, arena, viewport);
 
     /*
      * Update driver state
      */
 
+    auto& u = mPerViewUb;
+
     const uint64_t oneSecondRemainder = engine.getEngineTime().count() % 1000000000;
     const float fraction = float(double(oneSecondRemainder) / 1000000000.0);
-    mPerViewUb.setUniform(offsetof(PerViewUib, time), fraction);
-    mPerViewUb.setUniform(offsetof(PerViewUib, userTime), userTime);
+    u.setUniform(offsetof(PerViewUib, time), fraction);
+    u.setUniform(offsetof(PerViewUib, userTime), userTime);
+
+    auto const& fogOptions = mFogOptions;
+
+    // this can't be too high because we need density / heightFalloff to produce something
+    // close to fogOptions.density in the fragment shader which use 16-bits floats.
+    constexpr float epsilon = 0.001f;
+    const float heightFalloff = std::max(epsilon, fogOptions.heightFalloff);
+
+    // precalculate the constant part of density  integral
+    const float density = (fogOptions.density / heightFalloff) *
+            std::exp(-heightFalloff * (camera->getPosition().y - fogOptions.height));
+
+    u.setUniform(offsetof(PerViewUib, fogStart),             fogOptions.distance);
+    u.setUniform(offsetof(PerViewUib, fogMaxOpacity),        fogOptions.maximumOpacity);
+    u.setUniform(offsetof(PerViewUib, fogHeight),            fogOptions.height);
+    u.setUniform(offsetof(PerViewUib, fogHeightFalloff),     heightFalloff);
+    u.setUniform(offsetof(PerViewUib, fogColor),             fogOptions.color);
+    u.setUniform(offsetof(PerViewUib, fogDensity),           density);
+    u.setUniform(offsetof(PerViewUib, fogInscatteringStart), fogOptions.inScatteringStart);
+    u.setUniform(offsetof(PerViewUib, fogInscatteringSize),  fogOptions.inScatteringSize);
+    u.setUniform(offsetof(PerViewUib, fogColorFromIbl),      fogOptions.fogColorFromIbl ? 1.0f : 0.0f);
 
     // upload the renderables's dirty UBOs
     engine.getRenderableManager().prepare(driver,
@@ -622,7 +622,10 @@ UTILS_NOINLINE
         FScene::RenderableSoa::iterator end,
         uint8_t mask) noexcept {
     return std::partition(begin, end, [mask](auto it) {
-        return it.template get<FScene::VISIBLE_MASK>() == mask;
+        // Mask VISIBLE_MASK to ignore higher bits related to spot shadows. We only partition based
+        // on renderable and directional shadow visibility.
+        return (it.template get<FScene::VISIBLE_MASK>() &
+                (VISIBLE_RENDERABLE | VISIBLE_DIR_SHADOW_CASTER)) == mask;
     });
 }
 
@@ -653,6 +656,7 @@ void FView::prepareCamera(const CameraInfo& camera, const filament::Viewport& vi
 
     u.setUniform(offsetof(PerViewUib, cameraPosition), float3{camera.getPosition()});
     u.setUniform(offsetof(PerViewUib, worldOffset), camera.worldOffset);
+    u.setUniform(offsetof(PerViewUib, cameraFar), camera.zf);
 }
 
 void FView::prepareSSAO(Handle<HwTexture> ssao) const noexcept {
@@ -669,12 +673,16 @@ void FView::prepareSSR(backend::Handle<backend::HwTexture> ssr, float refraction
     mPerViewUb.setUniform(offsetof(PerViewUib, refractionLodOffset), refractionLodOffset);
 }
 
-void FView::cleanupSSAO() const noexcept {
-    mPerViewSb.setSampler(PerViewSib::SSAO, {}, {});
+void FView::prepareStructure(backend::Handle<backend::HwTexture> structure) const noexcept {
+    // sampler must be NEAREST
+    mPerViewSb.setSampler(PerViewSib::STRUCTURE, structure, {});
 }
 
-void FView::cleanupSSR() const noexcept {
-    mPerViewSb.setSampler(PerViewSib::SSR, {}, {});
+void FView::cleanupRenderPasses() const noexcept {
+    auto& samplerGroup = mPerViewSb;
+    samplerGroup.setSampler(PerViewSib::SSAO, {}, {});
+    samplerGroup.setSampler(PerViewSib::SSR, {}, {});
+    samplerGroup.setSampler(PerViewSib::STRUCTURE, {}, {});
 }
 
 void FView::froxelize(FEngine& engine) const noexcept {
@@ -689,6 +697,10 @@ void FView::froxelize(FEngine& engine) const noexcept {
 void FView::commitUniforms(backend::DriverApi& driver) const noexcept {
     if (mPerViewUb.isDirty()) {
         driver.loadUniformBuffer(mPerViewUbh, mPerViewUb.toBufferDescriptor(driver));
+    }
+
+    if (mShadowUb.isDirty()) {
+        driver.loadUniformBuffer(mShadowUbh, mShadowUb.toBufferDescriptor(driver));
     }
 
     if (mPerViewSb.isDirty()) {
@@ -714,19 +726,12 @@ void FView::prepareVisibleRenderables(JobSystem& js,
     }
 }
 
-UTILS_NOINLINE
-void FView::prepareVisibleShadowCasters(JobSystem& js,
-        Frustum const& lightFrustum, FScene::RenderableSoa& renderableData) noexcept {
-    SYSTRACE_CALL();
-    FView::cullRenderables(js, renderableData, lightFrustum, VISIBLE_DIR_SHADOW_CASTER_BIT);
-}
-
 void FView::cullRenderables(JobSystem& js,
         FScene::RenderableSoa& renderableData, Frustum const& frustum, size_t bit) noexcept {
 
     float3 const* worldAABBCenter = renderableData.data<FScene::WORLD_AABB_CENTER>();
     float3 const* worldAABBExtent = renderableData.data<FScene::WORLD_AABB_EXTENT>();
-    uint8_t     * visibleArray    = renderableData.data<FScene::VISIBLE_MASK>();
+    FScene::VisibleMaskType* visibleArray = renderableData.data<FScene::VISIBLE_MASK>();
 
     // culling job (this runs on multiple threads)
     auto functor = [&frustum, worldAABBCenter, worldAABBExtent, visibleArray, bit]
@@ -809,6 +814,10 @@ void FView::updatePrimitivesLod(FEngine& engine, const CameraInfo&,
         auto ri = renderableData.elementAt<FScene::RENDERABLE_INSTANCE>(index);
         renderableData.elementAt<FScene::PRIMITIVES>(index) = rcm.getRenderPrimitives(ri, level);
     }
+}
+
+void FView::renderShadowMaps(FEngine& engine, FEngine::DriverApi& driver, RenderPass& pass) noexcept {
+    mShadowMapManager.render(engine, *this, driver, pass);
 }
 
 } // namespace details
@@ -988,6 +997,10 @@ View::AmbientOcclusionOptions const& View::getAmbientOcclusionOptions() const no
 
 void View::setBloomOptions(View::BloomOptions options) noexcept {
     upcast(this)->setBloomOptions(options);
+}
+
+void View::setFogOptions(View::FogOptions options) noexcept {
+    upcast(this)->setFogOptions(options);
 }
 
 View::BloomOptions View::getBloomOptions() const noexcept {

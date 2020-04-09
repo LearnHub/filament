@@ -1,20 +1,4 @@
-apply plugin: 'com.android.library'
-
 android {
-    buildToolsVersion versions.buildTools
-    compileSdkVersion versions.compileSdk
-    defaultConfig {
-        minSdkVersion versions.minSdk
-        targetSdkVersion versions.targetSdk
-
-        externalNativeBuild {
-            cmake {
-                arguments.addAll(rootProject.ext.cmakeArgs)
-                cppFlags.addAll(rootProject.ext.cppFlags)
-            }
-        }
-    }
-
     flavorDimensions "functionality"
     productFlavors {
         full {
@@ -30,23 +14,6 @@ android {
                 }
             }
         }
-    }
-
-    externalNativeBuild {
-        cmake {
-            path "CMakeLists.txt"
-        }
-    }
-
-    sourceSets {
-        main {
-            jni.srcDirs "src/main/cpp"
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
     }
 }
 

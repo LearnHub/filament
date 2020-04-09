@@ -370,8 +370,12 @@ void MetalTexture::loadSlice(uint32_t level, uint32_t xoffset, uint32_t yoffset,
                           destinationSlice:slice
                           destinationLevel:level
                          destinationOrigin:MTLOriginMake(xoffset, yoffset, 0)];
+        // We must ensure we only capture a pointer to bufferPool, not "this", as this texture could
+        // be deallocated before the completion handler runs. The MetalBufferPool is guaranteed to
+        // outlive the completion handler.
+        MetalBufferPool* bufferPool = this->context.bufferPool;
         [blitCommandBuffer addCompletedHandler:^(id<MTLCommandBuffer> cb) {
-            context.bufferPool->releaseBuffer(entry);
+            bufferPool->releaseBuffer(entry);
         }];
     } else {
        // The texture is too large to fit into a single buffer, create a staging texture instead.
@@ -545,7 +549,7 @@ id<MTLTexture> MetalRenderTarget::createMultisampledTexture(id<MTLDevice> device
     return [device newTextureWithDescriptor:descriptor];
 }
 
-MetalFence::MetalFence(MetalContext& context) {
+MetalFence::MetalFence(MetalContext& context) : context(context) {
     if (@available(macOS 10.14, iOS 12, *)) {
         cv = std::make_shared<std::condition_variable>();
         event = [context.device newSharedEvent];
@@ -555,12 +559,16 @@ MetalFence::MetalFence(MetalContext& context) {
         // Using a weak_ptr here because the Fence could be deleted before the block executes.
         std::weak_ptr<std::condition_variable> weakCv = cv;
         [event notifyListener:context.eventListener atValue:value block:^(id <MTLSharedEvent> o,
-                                                                          uint64_t value) {
+                uint64_t value) {
             if (auto cv = weakCv.lock()) {
                 cv->notify_all();
             }
         }];
     }
+}
+
+void MetalFence::onSignal(MetalFenceSignalBlock block) {
+    [event notifyListener:context.eventListener atValue:value block:block];
 }
 
 FenceStatus MetalFence::wait(uint64_t timeoutNs) {

@@ -33,7 +33,7 @@
 
 #include <getopt/getopt.h>
 
-#include "app/FilamentApp.h"
+#include <filamentapp/FilamentApp.h>
 
 #define STB_PERLIN_IMPLEMENTATION
 #include <stb_perlin.h>
@@ -173,7 +173,7 @@ void populateTextureWithPerlin(Texture* texture, Engine& engine, float time, Par
     const size_t imageBufferSize = dimensionWithPadding * dimensionWithPadding * sizeof(T);
     T* imageData = (T*) malloc(imageBufferSize);
 
-    JobSystem* js = JobSystem::getJobSystem();
+    JobSystem* js = &engine.getJobSystem();
 
     typedef float (*NoiseFunc)(float, float, float, float, float, int);
 

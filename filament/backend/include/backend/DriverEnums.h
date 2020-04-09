@@ -68,13 +68,12 @@ enum class TargetBufferFlags : uint8_t {
     COLOR1 = 0x2u,                          //!< Color buffer selected.
     COLOR2 = 0x4u,                          //!< Color buffer selected.
     COLOR3 = 0x8u,                          //!< Color buffer selected.
-    COLOR = COLOR0,                         //!< Color buffer selected.
+    COLOR = COLOR0,                         //!< \deprecated
+    COLOR_ALL = COLOR0 | COLOR1 | COLOR2 | COLOR3,
     DEPTH = 0x10u,                          //!< Depth buffer selected.
     STENCIL = 0x20u,                        //!< Stencil buffer selected.
-    COLOR_AND_DEPTH = COLOR | DEPTH,        //!< Color and depth buffer selected.
-    COLOR_AND_STENCIL = COLOR | STENCIL,    //!< Color and stencil buffer selected.
     DEPTH_AND_STENCIL = DEPTH | STENCIL,    //!< depth and stencil buffer selected.
-    ALL = COLOR | DEPTH | STENCIL           //!< Color, depth and stencil buffer selected.
+    ALL = COLOR_ALL | DEPTH | STENCIL       //!< Color, depth and stencil buffer selected.
 };
 
 inline TargetBufferFlags getMRTColorFlag(size_t index) noexcept {
@@ -115,6 +114,15 @@ enum class FenceStatus : int8_t {
     ERROR = -1,                 //!< An error occured. The Fence condition is not satisfied.
     CONDITION_SATISFIED = 0,    //!< The Fence condition is satisfied.
     TIMEOUT_EXPIRED = 1,        //!< wait()'s timeout expired. The Fence condition is not satisfied.
+};
+
+/**
+ * Status codes for sync objects
+ */
+enum class SyncStatus : int8_t {
+    ERROR = -1,          //!< An error occured. The Sync is not signaled.
+    SIGNALED = 0,        //!< The Sync is signaled.
+    NOT_SIGNALED = 1,    //!< The Sync is not signaled yet
 };
 
 static constexpr uint64_t FENCE_WAIT_FOR_EVER = uint64_t(-1);
@@ -249,16 +257,17 @@ enum class PixelDataFormat : uint8_t {
 
 //! Pixel Data Type
 enum class PixelDataType : uint8_t {
-    UBYTE,          //!< unsigned byte
-    BYTE,           //!< signed byte
-    USHORT,         //!< unsigned short (16-bits)
-    SHORT,          //!< signed short (16-bits)
-    UINT,           //!< unsigned int (32-bits)
-    INT,            //!< signed int (32-bits)
-    HALF,           //!< half-float (16-bits float)
-    FLOAT,          //!< float (32-bits float)
-    COMPRESSED,     //!< compressed pixels, @see CompressedPixelDataType
-    UINT_10F_11F_11F_REV    //!< three low precision floating-point numbers
+    UBYTE,                //!< unsigned byte
+    BYTE,                 //!< signed byte
+    USHORT,               //!< unsigned short (16-bit)
+    SHORT,                //!< signed short (16-bit)
+    UINT,                 //!< unsigned int (16-bit)
+    INT,                  //!< signed int (32-bit)
+    HALF,                 //!< half-float (16-bit float)
+    FLOAT,                //!< float (32-bits float)
+    COMPRESSED,           //!< compressed pixels, @see CompressedPixelDataType
+    UINT_10F_11F_11F_REV, //!< three low precision floating-point numbers
+    USHORT_565            //!< unsigned int (16-bit), encodes 3 RGB channels
 };
 
 //! Compressed pixel data types
@@ -783,9 +792,6 @@ struct RenderPassFlags {
      * Discarded buffers' content becomes invalid, they must not be read from again.
      */
     TargetBufferFlags discardEnd;
-
-    //! whether to ignore the scissor test during the clear operation
-    bool ignoreScissor;
 };
 
 /**

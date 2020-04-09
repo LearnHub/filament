@@ -205,6 +205,8 @@ DECL_DRIVER_API_R_N(backend::RenderTargetHandle, createRenderTarget,
 
 DECL_DRIVER_API_R_0(backend::FenceHandle, createFence)
 
+DECL_DRIVER_API_R_0(backend::SyncHandle, createSync)
+
 DECL_DRIVER_API_R_N(backend::SwapChainHandle, createSwapChain,
         void*, nativeWindow,
         uint64_t, flags)
@@ -218,6 +220,9 @@ DECL_DRIVER_API_R_N(backend::StreamHandle, createStreamFromTextureId,
         intptr_t, externalTextureId,
         uint32_t, width,
         uint32_t, height)
+
+DECL_DRIVER_API_R_0(backend::TimerQueryHandle, createTimerQuery)
+
 
 /*
  * Destroying driver objects
@@ -234,6 +239,8 @@ DECL_DRIVER_API_N(destroyTexture,         backend::TextureHandle, th)
 DECL_DRIVER_API_N(destroyRenderTarget,    backend::RenderTargetHandle, rth)
 DECL_DRIVER_API_N(destroySwapChain,       backend::SwapChainHandle, sch)
 DECL_DRIVER_API_N(destroyStream,          backend::StreamHandle, sh)
+DECL_DRIVER_API_N(destroyTimerQuery,      backend::TimerQueryHandle, sh)
+DECL_DRIVER_API_N(destroySync,            backend::SyncHandle, sh)
 
 /*
  * Synchronous APIs
@@ -256,6 +263,8 @@ DECL_DRIVER_API_SYNCHRONOUS_0(bool, isFrameTimeSupported)
 DECL_DRIVER_API_SYNCHRONOUS_0(bool, canGenerateMipmaps)
 DECL_DRIVER_API_SYNCHRONOUS_N(void, setupExternalImage, void*, image)
 DECL_DRIVER_API_SYNCHRONOUS_N(void, cancelExternalImage, void*, image)
+DECL_DRIVER_API_SYNCHRONOUS_N(bool, getTimerQueryValue, backend::TimerQueryHandle, query, uint64_t*, elapsedTime)
+DECL_DRIVER_API_SYNCHRONOUS_N(backend::SyncStatus, getSyncStatus, backend::SyncHandle, sh)
 
 /*
  * Updating driver objects
@@ -318,14 +327,6 @@ DECL_DRIVER_API_N(beginRenderPass,
 
 DECL_DRIVER_API_0(endRenderPass)
 
-DECL_DRIVER_API_N(discardSubRenderTargetBuffers,
-        backend::RenderTargetHandle, rth,
-        backend::TargetBufferFlags, targetBufferFlags,
-        uint32_t, left,
-        uint32_t, bottom,
-        uint32_t, width,
-        uint32_t, height)
-
 DECL_DRIVER_API_N(setRenderPrimitiveBuffer,
         backend::RenderPrimitiveHandle, rph,
         backend::VertexBufferHandle, vbh,
@@ -339,6 +340,13 @@ DECL_DRIVER_API_N(setRenderPrimitiveRange,
         uint32_t, minIndex,
         uint32_t, maxIndex,
         uint32_t, count)
+
+DECL_DRIVER_API_N(beginTimerQuery,
+        backend::TimerQueryHandle, query)
+
+DECL_DRIVER_API_N(endTimerQuery,
+        backend::TimerQueryHandle, query)
+
 
 /*
  * Swap chain

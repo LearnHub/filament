@@ -22,6 +22,13 @@ option(FILAMENT_ENABLE_LTO "Enable link-time optimizations if supported by the c
 option(FILAMENT_SKIP_SAMPLES "Don't build samples" OFF)
 
 # ==================================================================================================
+# CMake policies
+# ==================================================================================================
+if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.12")
+    cmake_policy(SET CMP0074 NEW)
+endif()
+
+# ==================================================================================================
 # Support for ccache
 # ==================================================================================================
 find_program(CCACHE_PROGRAM ccache)
@@ -94,29 +101,6 @@ if (WIN32)
 endif()
 
 # ==================================================================================================
-# Check if embree is available.
-# This is an optional dependency and can be installed with homebrew, apt-get, etc.
-# ==================================================================================================
-find_package(embree 3.0 QUIET PATHS /usr/lib64/cmake)
-if (embree_FOUND AND NOT ANDROID AND NOT IOS)
-    message("Found embree in ${embree_DIR}")
-    set(MKLDNN_THREADING "TBB")
-    include(third_party/OpenImageDenoise/cmake/resource.cmake)
-    include(third_party/OpenImageDenoise/mkl-dnn/cmake/Threading.cmake)
-    include(third_party/OpenImageDenoise/mkl-dnn/cmake/TBB.cmake)
-    find_package(TBB QUIET)
-    if (TBB_FOUND AND "${TBB_VERSION_MAJOR}" VERSION_EQUAL 2019)
-        message("Found TBB ${TBB_VERSION}")
-        add_definitions(-DFILAMENT_HAS_EMBREE)
-        set(DENOISE_LIBRARY OpenImageDenoise)
-    else()
-        message("TBB 2019 not found.")
-    endif()
-else()
-    message("Embree not found, pipeline features are disabled.")
-endif()
-
-# ==================================================================================================
 #  Paths
 # ==================================================================================================
 # Where our external libs are
@@ -155,10 +139,8 @@ endif()
 # Detect use of the clang-cl.exe frontend, which does not support all of clangs normal options
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     if ("${CMAKE_CXX_SIMULATE_ID}" STREQUAL "MSVC")
-        set(CLANG_CL true)
+        message(FATAL_ERROR "Building with Clang on Windows is no longer supported. Use MSVC 2019 instead.")
     endif()
-elseif (MSVC)
-    set(MSVC_NATIVE true)
 endif()
 
 # ==================================================================================================
@@ -183,7 +165,7 @@ if (WIN32)
     set(CXX_STANDARD "/std:c++14")
 endif()
 
-if (MSVC_NATIVE)
+if (MSVC)
     set(CXX_STANDARD "/std:c++latest")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_STANDARD} /W0 /Zc:__cplusplus")
 else()
@@ -209,7 +191,7 @@ if (CYGWIN)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions -fno-rtti")
 endif()
 
-if (CLANG_CL OR MSVC)
+if (MSVC)
     # Since the "secure" replacements that MSVC suggests are not portable, disable
     # the deprecation warnings. Also disable warnings about use of POSIX functions (i.e. "unlink").
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE")
@@ -225,7 +207,7 @@ endif()
 # ==================================================================================================
 # Release compiler flags
 # ==================================================================================================
-if (NOT CLANG_CL AND NOT MSVC)
+if (NOT MSVC)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fomit-frame-pointer -ffunction-sections -fdata-sections")
 endif()
 
@@ -249,8 +231,7 @@ endif()
 #  -fsanitize=undefined causes extremely long link times
 #  -fsanitize=address causes a crash with assimp, which we can't explain for now
 #set(EXTRA_SANITIZE_OPTIONS "-fsanitize=undefined -fsanitize=address")
-# clang-cl.exe on Windows does not support -fstack-protector.
-if (NOT CLANG_CL AND NOT MSVC AND NOT WEBGL)
+if (NOT MSVC AND NOT WEBGL)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fstack-protector")
 endif()
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${EXTRA_SANITIZE_OPTIONS}")
@@ -280,9 +261,6 @@ if (APPLE)
     # prevents ar from invoking ranlib, let CMake do it
     set(CMAKE_C_ARCHIVE_CREATE   "<CMAKE_AR> qc -S <TARGET> <LINK_FLAGS> <OBJECTS>")
     set(CMAKE_CXX_ARCHIVE_CREATE "<CMAKE_AR> qc -S <TARGET> <LINK_FLAGS> <OBJECTS>")
-elseif (CLANG_CL)
-    set(GC_SECTIONS "")
-    set(B_SYMBOLIC_FUNCTIONS "")
 endif()
 
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${GC_SECTIONS}")
@@ -490,8 +468,8 @@ add_subdirectory(${LIBRARIES}/geometry)
 add_subdirectory(${LIBRARIES}/gltfio)
 add_subdirectory(${LIBRARIES}/ibl)
 add_subdirectory(${LIBRARIES}/image)
-add_subdirectory(${LIBRARIES}/rays)
 add_subdirectory(${LIBRARIES}/math)
+add_subdirectory(${LIBRARIES}/mathio)
 add_subdirectory(${LIBRARIES}/utils)
 add_subdirectory(${FILAMENT}/filament)
 add_subdirectory(${FILAMENT}/shaders)
@@ -500,7 +478,7 @@ add_subdirectory(${EXTERNAL}/smol-v/tnt)
 add_subdirectory(${EXTERNAL}/benchmark/tnt)
 add_subdirectory(${EXTERNAL}/meshoptimizer)
 add_subdirectory(${EXTERNAL}/cgltf/tnt)
-add_subdirectory(${EXTERNAL}/xatlas/tnt)
+add_subdirectory(${EXTERNAL}/draco/tnt)
 add_subdirectory(${EXTERNAL}/stb/tnt)
 add_subdirectory(${EXTERNAL}/getopt)
 
@@ -537,6 +515,7 @@ endif()
 
 if (NOT ANDROID AND NOT WEBGL AND NOT IOS)
     add_subdirectory(${LIBRARIES}/bluegl)
+    add_subdirectory(${LIBRARIES}/filamentapp)
     add_subdirectory(${LIBRARIES}/filagui)
     add_subdirectory(${LIBRARIES}/imageio)
     add_subdirectory(${LIBRARIES}/matdbg)
@@ -568,11 +547,6 @@ if (NOT ANDROID AND NOT WEBGL AND NOT IOS)
     add_subdirectory(${TOOLS}/roughness-prefilter)
     add_subdirectory(${TOOLS}/skygen)
     add_subdirectory(${TOOLS}/specular-color)
-
-    if (DENOISE_LIBRARY)
-        add_subdirectory(${EXTERNAL}/OpenImageDenoise/tnt)
-    endif()
-
 endif()
 
 # Generate exported executables for cross-compiled builds (Android, WebGL, and iOS)

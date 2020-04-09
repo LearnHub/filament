@@ -144,15 +144,51 @@ Filament.loadClassExtensions = function() {
         return new Filament.gltfio$AssetLoader(this, materials);
     };
 
+    /// setAmbientOcclusionOptions ::method::
+    /// overrides ::argument:: Dictionary with one or more of the following properties: \
+    /// radius, power, bias, resolution, intensity, quality.
+    Filament.View.prototype.setAmbientOcclusionOptions = function(overrides) {
+        const options = {
+            radius: 0.3,
+            power: 1.0,
+            bias: 0.0005,
+            resolution: 0.5,
+            intensity: 1.0,
+            quality: Filament.View$QualityLevel.LOW
+        };
+        Object.assign(options, overrides);
+        this._setAmbientOcclusionOptions(options);
+    };
+
+    /// setBloomOptions ::method::
+    /// overrides ::argument:: Dictionary with one or more of the following properties: \
+    /// dirtStrength, strength, resolution, anomorphism, levels, blendMode, threshold, enabled, dirt.
+    Filament.View.prototype.setBloomOptions = function(overrides) {
+        const options = {
+            dirtStrength: 0.2,
+            strength: 0.10,
+            resolution: 360,
+            anamorphism: 1.0,
+            levels: 6,
+            blendMode: Filament.View$BloomOptions$BloomMode.ADD,
+            threshold: true,
+            enabled: false,
+            dirt: null
+        };
+        Object.assign(options, overrides);
+        this._setBloomOptions(options);
+    };
+
     /// VertexBuffer ::core class::
 
     /// setBufferAt ::method::
     /// engine ::argument:: [Engine]
     /// bufferIndex ::argument:: non-negative integer
     /// buffer ::argument:: asset string, or Uint8Array, or [Buffer]
-    Filament.VertexBuffer.prototype.setBufferAt = function(engine, bufferIndex, buffer) {
+    /// byteOffset ::argument:: non-negative integer
+    Filament.VertexBuffer.prototype.setBufferAt = function(engine, bufferIndex, buffer, byteOffset = 0) {
         buffer = getBufferDescriptor(buffer);
-        this._setBufferAt(engine, bufferIndex, buffer);
+        this._setBufferAt(engine, bufferIndex, buffer, byteOffset);
         buffer.delete();
     };
 
@@ -161,9 +197,10 @@ Filament.loadClassExtensions = function() {
     /// setBuffer ::method::
     /// engine ::argument:: [Engine]
     /// buffer ::argument:: asset string, or Uint8Array, or [Buffer]
-    Filament.IndexBuffer.prototype.setBuffer = function(engine, buffer) {
+    /// byteOffset ::argument:: non-negative integer
+    Filament.IndexBuffer.prototype.setBuffer = function(engine, buffer, byteOffset = 0) {
         buffer = getBufferDescriptor(buffer);
-        this._setBuffer(engine, buffer);
+        this._setBuffer(engine, buffer, byteOffset);
         buffer.delete();
     };
 
