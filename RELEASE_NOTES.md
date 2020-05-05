@@ -5,6 +5,8 @@ A new header is inserted each time a *tag* is created.
 
 ## Next release
 
+## v1.6.0
+
 - gltfio: fixed incorrect cone angles with lights.
 - Specular ambient occlusion now offers 3 modes: off, simple (default on desktop) and bent normals.
   The latter is more accurate but more expensive and requires a bent normal to be specified in the
@@ -15,14 +17,27 @@ A new header is inserted each time a *tag* is created.
 - Refraction can now be set on `MaterialBuilder` from Java.
 - Refraction mode and type can now be set by calling `MaterialBuilder::refractionMode()`.
   and `MaterialBuilder::refractionType()` instad of `materialRefraction()` and
-  `materialRefractionType()` (️⚠ API change).
+  `materialRefractionType()` (️⚠️ **API change**).
 - Fixed documentation confusion about focused spot vs spot lights.
 - Fixed a race condition in the job system.
 - Fixed support for 565 bitmaps on Android.
 - Added support for timer queries in the Metal backend.
 - Improved dynamic resolution implementation to be more accurate and target more platforms.
 - `beginFrame()` now accepts a v-sync timestamp for accurate frame time measurement (used for
-  frame skipping and dynamic resolution). You can pass `0` to get the old behavior (️⚠ API change).
+  frame skipping and dynamic resolution). You can pass `0` to get the old behavior (⚠️ **API change**).
+- Fixed several issues related to multi-view support: removed
+  `View::setClearColor()`, a similar functionality is now handled by `Renderer::setClearOptions()`
+  and `Skybox`, the later now can be set to a constant color (⚠️ **API breakage**).
+- Fixed spot/point lights rendering bug depending on Viewport position.
+- Textures can now be swizzled.
+- The emissive property of materials is now expressed in nits and the alpha channel contains the
+  exposure weight (at 0.0 the exposure is not applied to the emissive component of a surface, at
+  1.0 the exposure is applied just like with any regular light) (⚠️ **API breakage**).
+- Added new `intensityCandela` and `setIntensityCandela` API to `LightManager` for setting a punctual
+  light's intensity in candela.
+- Fixed an issue where some `ShadowOptions` were not being respected when passed to
+  `LightManager::Builder`.
+- Added a Depth of Field post-processing effect
 
 ## v1.5.2
 

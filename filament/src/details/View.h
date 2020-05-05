@@ -119,21 +119,9 @@ public:
         return mViewport;
     }
 
-    void setClearColor(LinearColorA const& clearColor) noexcept;
-    LinearColorA const& getClearColor() const noexcept {
-        return mClearColor;
-    }
-
-    void setClearTargets(bool color, bool depth, bool stencil) noexcept;
     bool getClearTargetColor() const noexcept {
         // don't clear the color buffer if we have a skybox
-        return mClearTargetColor && !isSkyboxVisible();
-    }
-    bool getClearTargetDepth() const noexcept {
-        return mClearTargetDepth;
-    }
-    bool getClearTargetStencil() const noexcept {
-        return mClearTargetStencil;
+        return !isSkyboxVisible();
     }
     bool isSkyboxVisible() const noexcept;
 
@@ -158,7 +146,8 @@ public:
         return mName.c_str();
     }
 
-    void prepareCamera(const CameraInfo& camera, const Viewport& viewport) const noexcept;
+    void prepareCamera(const CameraInfo& camera) const noexcept;
+    void prepareViewport(const Viewport& viewport) const noexcept;
     void prepareShadowing(FEngine& engine, backend::DriverApi& driver,
             FScene::RenderableSoa& renderableData, FScene::LightSoa& lightData) noexcept;
     void prepareLighting(FEngine& engine, FEngine::DriverApi& driver,
@@ -188,13 +177,8 @@ public:
         return &mDirectionalShadowMap.getDebugCamera();
     }
 
-    void setRenderTarget(FRenderTarget* renderTarget, TargetBufferFlags discard) noexcept {
+    void setRenderTarget(FRenderTarget* renderTarget) noexcept {
         mRenderTarget = renderTarget;
-        mDiscardedTargetBuffers = discard;
-    }
-
-    void setRenderTarget(TargetBufferFlags discard) noexcept {
-        mDiscardedTargetBuffers = discard;
     }
 
     FRenderTarget* getRenderTarget() const noexcept {
@@ -232,8 +216,6 @@ public:
     Dithering getDithering() const noexcept {
         return mDithering;
     }
-
-    TargetBufferFlags getDiscardedTargetBuffers() const noexcept { return mDiscardedTargetBuffers; }
 
     bool hasPostProcessPass() const noexcept {
         return mHasPostProcessPass;
@@ -288,6 +270,10 @@ public:
         mBloomOptions = options;
     }
 
+    BloomOptions getBloomOptions() const noexcept {
+        return mBloomOptions;
+    }
+
     void setFogOptions(FogOptions options) noexcept {
         options.distance = std::max(0.0f, options.distance);
         options.maximumOpacity = math::clamp(options.maximumOpacity, 0.0f, 1.0f);
@@ -298,8 +284,22 @@ public:
         mFogOptions = options;
     }
 
-    BloomOptions getBloomOptions() const noexcept {
-        return mBloomOptions;
+    void setDepthOfFieldOptions(DepthOfFieldOptions options) noexcept {
+        options.focusDistance = std::max(0.0f, options.focusDistance);
+        options.blurScale = std::max(0.0f, options.blurScale);
+        mDepthOfFieldOptions = options;
+    }
+
+    DepthOfFieldOptions getDepthOfFieldOptions() const noexcept {
+        return mDepthOfFieldOptions;
+    }
+
+    void setBlendMode(BlendMode blendMode) noexcept {
+        mBlendMode = blendMode;
+    }
+
+    BlendMode getBlendMode() const noexcept {
+        return mBlendMode;
     }
 
     Range const& getVisibleRenderables() const noexcept {
@@ -312,14 +312,6 @@ public:
 
     Range const& getVisibleSpotShadowCasters() const noexcept {
         return mSpotLightShadowCasters;
-    }
-
-    TargetBufferFlags getClearFlags() const noexcept {
-        TargetBufferFlags clearFlags = {};
-        if (getClearTargetColor())     clearFlags |= TargetBufferFlags::COLOR;
-        if (getClearTargetDepth())     clearFlags |= TargetBufferFlags::DEPTH;
-        if (getClearTargetStencil())   clearFlags |= TargetBufferFlags::STENCIL;
-        return clearFlags;
     }
 
     FCamera const& getCameraUser() const noexcept { return *mCullingCamera; }
@@ -346,10 +338,10 @@ private:
             FLightManager const& lcm, utils::JobSystem& js, Frustum const& frustum,
             FScene::LightSoa& lightData) noexcept;
 
-    void computeVisibilityMasks(
+    static void computeVisibilityMasks(
             uint8_t visibleLayers, uint8_t const* layers,
             FRenderableManager::Visibility const* visibility, uint8_t* visibleMask,
-            size_t count) const;
+            size_t count) ;
 
     void bindPerViewUniformsAndSamplers(FEngine::DriverApi& driver) const noexcept {
         driver.bindUniformBuffer(BindingPoints::PER_VIEW, mPerViewUbh);
@@ -380,14 +372,9 @@ private:
     mutable Froxelizer mFroxelizer;
 
     Viewport mViewport;
-    LinearColorA mClearColor{};
     bool mCulling = true;
     bool mFrontFaceWindingInverted = false;
-    bool mClearTargetColor = true;
-    bool mClearTargetDepth = true;
-    bool mClearTargetStencil = false;
 
-    TargetBufferFlags mDiscardedTargetBuffers = TargetBufferFlags::ALL;
     FRenderTarget* mRenderTarget = nullptr;
 
     uint8_t mVisibleLayers = 0x1;
@@ -401,6 +388,8 @@ private:
     AmbientOcclusionOptions mAmbientOcclusionOptions{};
     BloomOptions mBloomOptions;
     FogOptions mFogOptions;
+    DepthOfFieldOptions mDepthOfFieldOptions;
+    BlendMode mBlendMode = BlendMode::OPAQUE;
 
     DynamicResolutionOptions mDynamicResolution;
     math::float2 mScale = 1.0f;

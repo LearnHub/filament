@@ -1,12 +1,9 @@
 void addEmissive(const MaterialInputs material, inout vec4 color) {
-    #if defined(MATERIAL_HAS_EMISSIVE)
-    // The emissive property applies independently of the shading model
-    // It is defined as a color + exposure compensation
+#if defined(MATERIAL_HAS_EMISSIVE)
     highp vec4 emissive = material.emissive;
-    highp float attenuation = computePreExposedIntensity(
-    pow(2.0, frameUniforms.ev100 + emissive.w - 3.0), frameUniforms.exposure);
+    highp float attenuation = mix(1.0, frameUniforms.exposure, emissive.w);
     color.rgb += emissive.rgb * attenuation;
-    #endif
+#endif
 }
 
 /**
@@ -40,8 +37,8 @@ vec4 evaluateMaterial(const MaterialInputs material) {
     if ((frameUniforms.directionalShadows & 1u) != 0u) {
         visibility = shadow(light_shadowMap, 0u, getLightSpacePosition());
     }
-    if (visibility > 0.0 && frameUniforms.ssContactShadowDistance != 0.0) {
-        if (objectUniforms.screenSpaceContactShadows != 0) {
+    if ((frameUniforms.directionalShadows & 0x2u) != 0u && visibility > 0.0) {
+        if (objectUniforms.screenSpaceContactShadows != 0u) {
             visibility *= (1.0 - screenSpaceContactShadow(frameUniforms.lightDirection));
         }
     }

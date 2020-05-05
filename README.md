@@ -31,7 +31,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.google.android.filament:filament-android:1.5.1'
+    implementation 'com.google.android.filament:filament-android:1.6.0'
 }
 ```
 
@@ -71,15 +71,11 @@ steps:
 
 ## Examples
 
-### Materials
-
-Here are a few sample materials rendered with Filament:
-
+![Night scene](docs/images/samples/example_bistro1.jpg)
+![Night scene](docs/images/samples/example_bistro2.jpg)
 ![Materials](docs/images/samples/example_materials1.jpg)
 ![Materials](docs/images/samples/example_materials2.jpg)
 ![Helmet](docs/images/samples/example_helmet.jpg)
-![Car](docs/images/samples/example_car1.jpg)
-![Car](docs/images/samples/example_car2.jpg)
 ![Screen-space refraction](docs/images/samples/example_ssr.jpg)
 
 
@@ -136,7 +132,7 @@ Here are a few screenshots of applications that use Filament in production:
 - ACES-like tone-mapping
 - Temporal dithering
 - FXAA, MSAA and specular anti-aliasing
-- Dynamic resolution (on Android and iOS)
+- Dynamic resolution
 
 ## Rendering with Filament
 
@@ -234,11 +230,12 @@ creating the swap chain in the `onNativeWindowChanged()` callback.
 
 ### iOS
 
-See `ios/samples` for examples of using Filament on iOS.
+Filament is supported on iOS 12.0 and above. See `ios/samples` for examples of using Filament on
+iOS.
 
 Filament on iOS is largely the same as native rendering with C++. A `CAEAGLLayer` or `CAMetalLayer`
-is passed to the `createSwapChain` method. Filament for iOS supports both OpenGL ES and Vulkan via
-MoltenVK.
+is passed to the `createSwapChain` method. Filament for iOS supports both Metal (preferred) and
+OpenGL ES.
 
 ## Assets
 

@@ -135,8 +135,6 @@ public:
 
     static void destroy(FEngine* engine);
 
-    static void assertValid(Engine const& engine, const char* function);
-
     ~FEngine() noexcept;
 
     backend::Driver& getDriver() const noexcept { return *mDriver; }
@@ -154,6 +152,7 @@ public:
     const FMaterial* getDefaultMaterial() const noexcept { return mDefaultMaterial; }
     const FMaterial* getSkyboxMaterial() const noexcept;
     const FIndirectLight* getDefaultIndirectLight() const noexcept { return mDefaultIbl; }
+    const FTexture* getDummyCubemap() const noexcept { return mDefaultIblTexture; }
 
     backend::Handle<backend::HwRenderPrimitive> getFullScreenRenderPrimitive() const noexcept {
         return mFullScreenTriangleRph;

@@ -13,23 +13,6 @@ set(TEXTURE_DIR "${GENERATION_ROOT}/generated/texture")
 set(RESOURCE_BINS)
 
 # ==================================================================================================
-# Convert OBJ files into filamesh files.
-# ==================================================================================================
-
-function(add_mesh SOURCE TARGET)
-    set(source_mesh "${ROOT_DIR}/${SOURCE}")
-    set(target_mesh "${RESOURCE_DIR}/${TARGET}")
-    set(RESOURCE_BINS ${RESOURCE_BINS} ${target_mesh} PARENT_SCOPE)
-    add_custom_command(
-        OUTPUT ${target_mesh}
-        COMMAND filamesh --compress ${source_mesh} ${target_mesh}
-        MAIN_DEPENDENCY ${source_mesh}
-        DEPENDS filamesh)
-endfunction()
-
-add_mesh("assets/models/monkey/monkey.obj" "suzanne.filamesh")
-
-# ==================================================================================================
 # Build materials
 # ==================================================================================================
 
@@ -117,7 +100,8 @@ function(add_envmap SOURCE TARGET)
     add_custom_command(OUTPUT ${target_skybox} ${target_envmap}
         COMMAND cmgen -x ${TARGET} ${CMGEN_ARGS} ${source_envmap}
         MAIN_DEPENDENCY ${source_envmap}
-        DEPENDS cmgen)
+        DEPENDS cmgen
+        COMMENT "Generating environment map ${target_envmap}")
 endfunction()
 
 add_envmap("third_party/environments/venetian_crossroads_2k.hdr" "venetian_crossroads_2k")
@@ -129,23 +113,37 @@ add_envmap("third_party/environments/venetian_crossroads_2k.hdr" "venetian_cross
 function(add_ktxfiles SOURCE TARGET EXTRA_ARGS)
     set(source_path "${ROOT_DIR}/${SOURCE}")
     set(target_path "${TEXTURE_DIR}/${TARGET}")
-    set(TEXTURE_FILES ${TEXTURE_FILES} ${target_path} PARENT_SCOPE)
+    set(MONKEY_FILES ${MONKEY_FILES} ${target_path} PARENT_SCOPE)
     add_custom_command(
         OUTPUT ${target_path}
         COMMAND mipgen --quiet --strip-alpha ${EXTRA_ARGS} ${source_path} ${target_path}
         MAIN_DEPENDENCY ${source_path}
-        DEPENDS mipgen)
+        DEPENDS mipgen
+        COMMENT "Generating mip levels for ${source_path}")
 endfunction()
 
 function(add_pngfile SOURCE TARGET)
     set(source_path "${ROOT_DIR}/${SOURCE}")
     set(target_path "${TEXTURE_DIR}/${TARGET}")
-    set(TEXTURE_FILES ${TEXTURE_FILES} ${target_path} PARENT_SCOPE)
+    set(MONKEY_FILES ${MONKEY_FILES} ${target_path} PARENT_SCOPE)
     add_custom_command(
         OUTPUT ${target_path}
         COMMAND ${CMAKE_COMMAND} -E copy ${source_path} ${target_path}
         MAIN_DEPENDENCY ${source_path})
 endfunction()
+
+function(add_mesh SOURCE TARGET)
+    set(source_mesh "${ROOT_DIR}/${SOURCE}")
+    set(target_mesh "${RESOURCE_DIR}/${TARGET}")
+    set(MONKEY_FILES ${MESH_BINS} ${target_mesh} PARENT_SCOPE)
+    add_custom_command(
+        OUTPUT ${target_mesh}
+        COMMAND filamesh --compress ${source_mesh} ${target_mesh}
+        MAIN_DEPENDENCY ${source_mesh}
+        DEPENDS filamesh)
+endfunction()
+
+add_mesh("assets/models/monkey/monkey.obj" "suzanne.filamesh")
 
 add_ktxfiles("assets/models/monkey/albedo.png" "albedo_s3tc.ktx" "--compression=s3tc_rgb_dxt1")
 add_ktxfiles("assets/models/monkey/roughness.png" "roughness.ktx" "--grayscale")
@@ -154,13 +152,13 @@ add_ktxfiles("assets/models/monkey/ao.png" "ao.ktx" "--grayscale")
 
 add_pngfile("assets/models/monkey/normal.png" "normal.png")
 
-get_resgen_vars(${RESOURCE_DIR} textures)
+get_resgen_vars(${RESOURCE_DIR} monkey)
 
 add_custom_command(
         OUTPUT ${RESGEN_OUTPUTS}
-        COMMAND resgen ${RESGEN_FLAGS} ${TEXTURE_FILES}
-        DEPENDS resgen ${TEXTURE_FILES}
-        COMMENT "Aggregating textures"
+        COMMAND resgen ${RESGEN_FLAGS} ${MONKEY_FILES}
+        DEPENDS resgen ${MONKEY_FILES}
+        COMMENT "Aggregating monkey resources"
 )
 
 if (DEFINED RESGEN_SOURCE_FLAGS)
@@ -211,57 +209,42 @@ endif()
 # Test apps
 # ==================================================================================================
 
-# Multi-configuration generators, like Visual Studio or Xcode, place executable binaries in a
-# sub-directory named after the configuration, like "Debug" or "Release".
-# For these generators, in order to find assets, we must "walk" up an additional directory.
-get_property(_isMultiConfig GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-
 function(add_demo NAME)
     include_directories(${GENERATION_ROOT})
     add_executable(${NAME} ${NAME}.cpp)
-    target_link_libraries(${NAME} PRIVATE sample-resources filamentapp filameshio)
+    target_link_libraries(${NAME} PRIVATE sample-resources filamentapp)
     target_compile_options(${NAME} PRIVATE ${COMPILER_FLAGS})
-    if (_isMultiConfig)
-        target_compile_definitions(${NAME} PRIVATE RELATIVE_ASSET_PATH="..")
-    else()
-        target_compile_definitions(${NAME} PRIVATE RELATIVE_ASSET_PATH=".")
-    endif()
 endfunction()
 
-
 if (NOT ANDROID)
+    add_demo(animation)
+    add_demo(depthtesting)
     add_demo(frame_generator)
     add_demo(gltf_viewer)
     add_demo(heightfield)
+    add_demo(hellopbr)
+    add_demo(hellotriangle)
     add_demo(lightbulb)
     add_demo(material_sandbox)
     add_demo(point_sprites)
     add_demo(sample_cloth)
     add_demo(sample_full_pbr)
     add_demo(sample_normal_map)
-    add_demo(suzanne)
-
-    # Sample app specific
-    target_link_libraries(frame_generator PRIVATE imageio)
-    target_link_libraries(suzanne PRIVATE suzanne-resources)
-    target_link_libraries(gltf_viewer PRIVATE gltf-resources gltfio)
-
-endif()
-
-# ==================================================================================================
-# Build Vulkan Executables
-# ==================================================================================================
-
-if (FILAMENT_SUPPORTS_VULKAN)
-    add_demo(animation)
-    add_demo(depthtesting)
-    add_demo(hellopbr)
-    add_demo(hellotriangle)
     add_demo(shadowtest)
     add_demo(strobecolor)
+    add_demo(suzanne)
     add_demo(texturedquad)
     add_demo(vbotest)
     add_demo(viewtest)
+
+    # Sample app specific
+    target_link_libraries(frame_generator PRIVATE imageio)
+    target_link_libraries(gltf_viewer PRIVATE gltf-resources gltfio)
+    target_link_libraries(hellopbr PRIVATE filameshio suzanne-resources)
+    target_link_libraries(sample_cloth PRIVATE filameshio)
+    target_link_libraries(sample_normal_map PRIVATE filameshio)
+    target_link_libraries(suzanne PRIVATE filameshio suzanne-resources)
+
 endif()
 
 # ==================================================================================================

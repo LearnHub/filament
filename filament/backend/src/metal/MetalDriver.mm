@@ -97,6 +97,10 @@ void MetalDriver::debugCommand(const char *methodName) {
 }
 #endif
 
+
+void MetalDriver::tick(int) {
+}
+
 void MetalDriver::beginFrame(int64_t monotonic_clock_ns, uint32_t frameId,
         backend::FrameFinishedCallback callback, void* user) {
     // If a callback was specified, then the client is responsible for presenting the frame.
@@ -111,11 +115,10 @@ void MetalDriver::execute(std::function<void(void)> fn) noexcept {
 }
 
 void MetalDriver::setPresentationTime(int64_t monotonic_clock_ns) {
-
 }
 
 void MetalDriver::endFrame(uint32_t frameId) {
-    // If we haven't commited the command buffer (if the frame was canceled), do it now. There may
+    // If we haven't committed the command buffer (if the frame was canceled), do it now. There may
     // be commands in it (like fence signaling) that need to execute.
     submitPendingCommands(mContext);
 
@@ -163,6 +166,15 @@ void MetalDriver::createTextureR(Handle<HwTexture> th, SamplerType target, uint8
         uint32_t depth, TextureUsage usage) {
     construct_handle<MetalTexture>(mHandleMap, th, *mContext, target, levels, format, samples,
             width, height, depth, usage);
+}
+
+void MetalDriver::createTextureSwizzledR(Handle<HwTexture> th, SamplerType target, uint8_t levels,
+        TextureFormat format, uint8_t samples, uint32_t width, uint32_t height,
+        uint32_t depth, TextureUsage usage,
+        TextureSwizzle r, TextureSwizzle g, TextureSwizzle b, TextureSwizzle a) {
+    construct_handle<MetalTexture>(mHandleMap, th, *mContext, target, levels, format, samples,
+            width, height, depth, usage);
+    // TODO: implement texture swizzle
 }
 
 void MetalDriver::importTextureR(Handle<HwTexture> th, intptr_t id,
@@ -239,11 +251,13 @@ void MetalDriver::createRenderTargetR(Handle<HwRenderTarget> rth,
 }
 
 void MetalDriver::createFenceR(Handle<HwFence> fh, int dummy) {
-    construct_handle<MetalFence>(mHandleMap, fh, *mContext);
+    auto* fence = handle_cast<MetalFence>(mHandleMap, fh);
+    fence->encode();
 }
 
 void MetalDriver::createSyncR(Handle<HwSync> sh, int) {
-    // TODO: implement Sync objects
+    auto* fence = handle_cast<MetalFence>(mHandleMap, sh);
+    fence->encode();
 }
 
 void MetalDriver::createSwapChainR(Handle<HwSwapChain> sch, void* nativeWindow, uint64_t flags) {
@@ -261,7 +275,7 @@ void MetalDriver::createStreamFromTextureIdR(Handle<HwStream>, intptr_t external
 }
 
 void MetalDriver::createTimerQueryR(Handle<HwTimerQuery> tqh, int) {
-    construct_handle<MetalTimerQuery>(mHandleMap, tqh);
+    // nothing to do, timer query was constructed in createTimerQueryS
 }
 
 Handle<HwVertexBuffer> MetalDriver::createVertexBufferS() noexcept {
@@ -273,6 +287,10 @@ Handle<HwIndexBuffer> MetalDriver::createIndexBufferS() noexcept {
 }
 
 Handle<HwTexture> MetalDriver::createTextureS() noexcept {
+    return alloc_handle<MetalTexture, HwTexture>();
+}
+
+Handle<HwTexture> MetalDriver::createTextureSwizzledS() noexcept {
     return alloc_handle<MetalTexture, HwTexture>();
 }
 
@@ -305,12 +323,15 @@ Handle<HwRenderTarget> MetalDriver::createRenderTargetS() noexcept {
 }
 
 Handle<HwFence> MetalDriver::createFenceS() noexcept {
-    return alloc_handle<MetalFence, HwFence>();
+    // The handle must be constructed here, as a synchronous call to wait might happen before
+    // createFenceR is executed.
+    return alloc_and_construct_handle<MetalFence, HwFence>(*mContext);
 }
 
 Handle<HwSync> MetalDriver::createSyncS() noexcept {
-    // TODO: implement Sync objects
-    return {};
+    // The handle must be constructed here, as a synchronous call to getSyncStatus might happen
+    // before createSyncR is executed.
+    return alloc_and_construct_handle<MetalFence, HwSync>(*mContext);
 }
 
 Handle<HwSwapChain> MetalDriver::createSwapChainS() noexcept {
@@ -326,7 +347,9 @@ Handle<HwStream> MetalDriver::createStreamFromTextureIdS() noexcept {
 }
 
 Handle<HwTimerQuery> MetalDriver::createTimerQueryS() noexcept {
-    return alloc_handle<MetalTimerQuery, HwTimerQuery>();
+    // The handle must be constructed here, as a synchronous call to getTimerQueryValue might happen
+    // before createTimerQueryR is executed.
+    return alloc_and_construct_handle<MetalTimerQuery, HwTimerQuery>();
 }
 
 void MetalDriver::destroyVertexBuffer(Handle<HwVertexBuffer> vbh) {
@@ -422,7 +445,9 @@ void MetalDriver::destroyTimerQuery(Handle<HwTimerQuery> tqh) {
 }
 
 void MetalDriver::destroySync(Handle<HwSync> sh) {
-    // TODO: implement Sync objects
+    if (sh) {
+        destruct_handle<MetalFence>(mHandleMap, sh);
+    }
 }
 
 
@@ -436,7 +461,7 @@ void MetalDriver::terminate() {
     mContext->bufferPool->reset();
     mContext->commandQueue = nil;
 
-    MetalExternalImage::shutdown();
+    MetalExternalImage::shutdown(*mContext);
     mContext->blitter->shutdown();
 }
 
@@ -612,8 +637,14 @@ bool MetalDriver::getTimerQueryValue(Handle<HwTimerQuery> tqh, uint64_t* elapsed
 }
 
 SyncStatus MetalDriver::getSyncStatus(Handle<HwSync> sh) {
-    // TODO: implement Sync objects
-    return SyncStatus::SIGNALED;
+    auto* fence = handle_cast<MetalFence>(mHandleMap, sh);
+    FenceStatus status = fence->wait(0);
+    if (status == FenceStatus::TIMEOUT_EXPIRED) {
+        return SyncStatus::NOT_SIGNALED;
+    } else if (status == FenceStatus::CONDITION_SATISFIED) {
+        return SyncStatus::SIGNALED;
+    }
+    return SyncStatus::ERROR;
 }
 
 void MetalDriver::generateMipmaps(Handle<HwTexture> th) {

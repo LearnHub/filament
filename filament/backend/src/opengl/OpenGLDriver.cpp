@@ -434,6 +434,10 @@ Handle<HwTexture> OpenGLDriver::createTextureS() noexcept {
     return initHandle<GLTexture>();
 }
 
+Handle<HwTexture> OpenGLDriver::createTextureSwizzledS() noexcept {
+    return initHandle<GLTexture>();
+}
+
 Handle<HwTexture> OpenGLDriver::importTextureS() noexcept {
     return initHandle<GLTexture>();
 }
@@ -613,7 +617,6 @@ void OpenGLDriver::createTextureR(Handle<HwTexture> th, SamplerType target, uint
     auto& gl = mContext;
     GLTexture* t = construct<GLTexture>(th, target, levels, samples, w, h, depth, format, usage);
     if (UTILS_LIKELY(usage & TextureUsage::SAMPLEABLE)) {
-
         if (UTILS_UNLIKELY(t->target == SamplerType::SAMPLER_EXTERNAL)) {
             mPlatform.createExternalImageTexture(t);
         } else {
@@ -670,6 +673,33 @@ void OpenGLDriver::createTextureR(Handle<HwTexture> th, SamplerType target, uint
         glGenRenderbuffers(1, &t->gl.id);
         renderBufferStorage(t->gl.id, t->gl.internalFormat, w, h, samples);
     }
+
+    CHECK_GL_ERROR(utils::slog.e)
+}
+
+void OpenGLDriver::createTextureSwizzledR(Handle<HwTexture> th,
+        SamplerType target, uint8_t levels, TextureFormat format, uint8_t samples,
+        uint32_t w, uint32_t h, uint32_t depth, TextureUsage usage,
+        TextureSwizzle r, TextureSwizzle g, TextureSwizzle b, TextureSwizzle a) {
+    DEBUG_MARKER()
+
+    assert(uint8_t(usage) & uint8_t(TextureUsage::SAMPLEABLE));
+
+    createTextureR(th, target, levels, format, samples, w, h, depth, usage);
+
+    // WebGL does not support swizzling. We assert for this in the Texture builder,
+    // so it is probably fine to silently ignore the swizzle state here.
+    #if !defined(__EMSCRIPTEN__)
+
+    // the texture is still bound and active from createTextureR
+    GLTexture* t = handle_cast<GLTexture *>(th);
+
+    glTexParameteri(t->gl.target, GL_TEXTURE_SWIZZLE_R, getSwizzleChannel(r));
+    glTexParameteri(t->gl.target, GL_TEXTURE_SWIZZLE_G, getSwizzleChannel(g));
+    glTexParameteri(t->gl.target, GL_TEXTURE_SWIZZLE_B, getSwizzleChannel(b));
+    glTexParameteri(t->gl.target, GL_TEXTURE_SWIZZLE_A, getSwizzleChannel(a));
+
+    #endif
 
     CHECK_GL_ERROR(utils::slog.e)
 }
@@ -2704,12 +2734,15 @@ void OpenGLDriver::executeEveryNowAndThenOps() noexcept {
 // Rendering ops
 // ------------------------------------------------------------------------------------------------
 
+void OpenGLDriver::tick(int) {
+    executeGpuCommandsCompleteOps();
+    executeEveryNowAndThenOps();
+}
+
 void OpenGLDriver::beginFrame(int64_t monotonic_clock_ns, uint32_t frameId,
         backend::FrameFinishedCallback, void*) {
     auto& gl = mContext;
     insertEventMarker("beginFrame");
-    executeGpuCommandsCompleteOps();
-    executeEveryNowAndThenOps();
     if (UTILS_UNLIKELY(!mExternalStreams.empty())) {
         OpenGLPlatform& platform = mPlatform;
         for (GLTexture const* t : mExternalStreams) {
@@ -2732,8 +2765,6 @@ void OpenGLDriver::setPresentationTime(int64_t monotonic_clock_ns) {
 void OpenGLDriver::endFrame(uint32_t frameId) {
     //SYSTRACE_NAME("glFinish");
     //glFinish();
-    //executeGpuCommandsCompleteOps();
-    executeEveryNowAndThenOps();
     insertEventMarker("endFrame");
 }
 

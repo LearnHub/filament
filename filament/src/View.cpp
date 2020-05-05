@@ -42,6 +42,7 @@
 #include <math/fast.h>
 
 #include <memory>
+#include <filament/View.h>
 
 
 using namespace filament::math;
@@ -197,16 +198,6 @@ float2 FView::updateScale(FrameInfo const& info) noexcept {
     }
 
     return mScale;
-}
-
-void FView::setClearColor(float4 const& clearColor) noexcept {
-    mClearColor = clearColor;
-}
-
-void FView::setClearTargets(bool color, bool depth, bool stencil) noexcept {
-    mClearTargetColor = color;
-    mClearTargetDepth = depth;
-    mClearTargetStencil = stencil;
 }
 
 void FView::setVisibleLayers(uint8_t select, uint8_t values) noexcept {
@@ -400,32 +391,10 @@ void FView::prepare(FEngine& engine, backend::DriverApi& driver, ArenaScope& are
     }
 
     // Note: for debugging (i.e. visualize what the camera / objects are doing, using
-    // the viewing camera), we can set worldOriginCamera to identity when mViewingCamera
-    // is set: e.g.
-    //      worldOriginCamera = mViewingCamera ? mat4f{} : worldOriginScene
+    // the viewing camera), we can set worldOriginScene to identity when mViewingCamera
+    // is set
+    mViewingCameraInfo = CameraInfo(*camera, worldOriginScene);
 
-    const mat4f worldOriginCamera = worldOriginScene;
-    const mat4f model{ worldOriginCamera * camera->getModelMatrix() };
-    mViewingCameraInfo = CameraInfo{
-            // projection with infinite z-far
-            .projection         = mat4f{ camera->getProjectionMatrix() },
-            // projection used for culling, with finite z-far
-            .cullingProjection  = mat4f{ camera->getCullingProjectionMatrix() },
-            // camera model matrix -- apply the world origin to it
-            .model              = model,
-            // camera view matrix
-            .view               = FCamera::getViewMatrix(model),
-            // near plane
-            .zn                 = camera->getNear(),
-            // far plane
-            .zf                 = camera->getCullingFar(),
-            // exposure
-            .ev100              = Exposure::ev100(*camera),
-            // world offset to allow users to determine the API-level camera position
-            .worldOffset        = camera->getPosition(),
-            // world origin transform, use only for debugging
-            .worldOrigin        = worldOriginCamera
-    };
     mCullingFrustum = FCamera::getFrustum(
             mCullingCamera->getCullingProjectionMatrix(),
             FCamera::getViewMatrix(worldOriginScene * mCullingCamera->getModelMatrix()));
@@ -440,7 +409,7 @@ void FView::prepare(FEngine& engine, backend::DriverApi& driver, ArenaScope& are
      * Light culling: runs in parallel with Renderable culling (below)
      */
 
-    auto prepareVisibleLightsJob = js.runAndRetain(js.createJob(nullptr,
+    auto *prepareVisibleLightsJob = js.runAndRetain(js.createJob(nullptr,
             [&frustum = mCullingFrustum, &engine, scene](JobSystem& js, JobSystem::Job*) {
                 FView::prepareVisibleLights(
                         engine.getLightManager(), js, frustum, scene->getLightData());
@@ -556,9 +525,10 @@ void FView::prepare(FEngine& engine, backend::DriverApi& driver, ArenaScope& are
     constexpr float epsilon = 0.001f;
     const float heightFalloff = std::max(epsilon, fogOptions.heightFalloff);
 
-    // precalculate the constant part of density  integral
-    const float density = (fogOptions.density / heightFalloff) *
-            std::exp(-heightFalloff * (camera->getPosition().y - fogOptions.height));
+    // precalculate the constant part of density  integral and correct for exp2() in the shader
+    const float density = ((fogOptions.density / heightFalloff) *
+            std::exp(-heightFalloff * (camera->getPosition().y - fogOptions.height)))
+                    * float(1.0f / F_LN2);
 
     u.setUniform(offsetof(PerViewUib, fogStart),             fogOptions.distance);
     u.setUniform(offsetof(PerViewUib, fogMaxOpacity),        fogOptions.maximumOpacity);
@@ -582,7 +552,7 @@ void FView::computeVisibilityMasks(
         uint8_t visibleLayers,
         uint8_t const* UTILS_RESTRICT layers,
         FRenderableManager::Visibility const* UTILS_RESTRICT visibility,
-        uint8_t* UTILS_RESTRICT visibleMask, size_t count) const {
+        uint8_t* UTILS_RESTRICT visibleMask, size_t count) {
     // __restrict__ seems to only be taken into account as function parameters. This is very
     // important here, otherwise, this loop doesn't get vectorized.
     // This is vectorized 16x.
@@ -629,7 +599,7 @@ UTILS_NOINLINE
     });
 }
 
-void FView::prepareCamera(const CameraInfo& camera, const filament::Viewport& viewport) const noexcept {
+void FView::prepareCamera(const CameraInfo& camera) const noexcept {
     SYSTRACE_CALL();
 
     const mat4f viewFromWorld(camera.view);
@@ -648,15 +618,18 @@ void FView::prepareCamera(const CameraInfo& camera, const filament::Viewport& vi
     u.setUniform(offsetof(PerViewUib, viewFromClipMatrix), viewFromClip);      // 1/projection
     u.setUniform(offsetof(PerViewUib, clipFromWorldMatrix), clipFromWorld);    // projection * view
     u.setUniform(offsetof(PerViewUib, worldFromClipMatrix), worldFromClip);    // 1/(projection * view)
+    u.setUniform(offsetof(PerViewUib, cameraPosition), float3{camera.getPosition()});
+    u.setUniform(offsetof(PerViewUib, worldOffset), camera.worldOffset);
+    u.setUniform(offsetof(PerViewUib, cameraFar), camera.zf);
+}
 
+void FView::prepareViewport(const filament::Viewport &viewport) const noexcept {
+    SYSTRACE_CALL();
+    UniformBuffer& u = mPerViewUb;
     const float w = viewport.width;
     const float h = viewport.height;
     u.setUniform(offsetof(PerViewUib, resolution), float4{ w, h, 1.0f / w, 1.0f / h });
     u.setUniform(offsetof(PerViewUib, origin), float2{ viewport.left, viewport.bottom });
-
-    u.setUniform(offsetof(PerViewUib, cameraPosition), float3{camera.getPosition()});
-    u.setUniform(offsetof(PerViewUib, worldOffset), camera.worldOffset);
-    u.setUniform(offsetof(PerViewUib, cameraFar), camera.zf);
 }
 
 void FView::prepareSSAO(Handle<HwTexture> ssao) const noexcept {
@@ -854,19 +827,6 @@ filament::Viewport const& View::getViewport() const noexcept {
     return upcast(this)->getViewport();
 }
 
-
-void View::setClearColor(float4 const& clearColor) noexcept {
-    upcast(this)->setClearColor(clearColor);
-}
-
-float4 const& View::getClearColor() const noexcept {
-    return upcast(this)->getClearColor();
-}
-
-void View::setClearTargets(bool color, bool depth, bool stencil) noexcept {
-    return upcast(this)->setClearTargets(color, depth, stencil);
-}
-
 void View::setFrustumCullingEnabled(bool culling) noexcept {
     upcast(this)->setFrustumCullingEnabled(culling);
 }
@@ -899,12 +859,8 @@ void View::setShadowsEnabled(bool enabled) noexcept {
     upcast(this)->setShadowsEnabled(enabled);
 }
 
-void View::setRenderTarget(RenderTarget* renderTarget, TargetBufferFlags discard) noexcept {
-    upcast(this)->setRenderTarget(upcast(renderTarget), discard);
-}
-
-void View::setRenderTarget(TargetBufferFlags discard) noexcept {
-    upcast(this)->setRenderTarget(discard);
+void View::setRenderTarget(RenderTarget* renderTarget) noexcept {
+    upcast(this)->setRenderTarget(upcast(renderTarget));
 }
 
 RenderTarget* View::getRenderTarget() const noexcept {
@@ -1003,9 +959,20 @@ void View::setFogOptions(View::FogOptions options) noexcept {
     upcast(this)->setFogOptions(options);
 }
 
+void View::setDepthOfFieldOptions(DepthOfFieldOptions options) noexcept {
+    upcast(this)->setDepthOfFieldOptions(options);
+}
+
 View::BloomOptions View::getBloomOptions() const noexcept {
     return upcast(this)->getBloomOptions();
 }
 
+void View::setBlendMode(BlendMode blendMode) noexcept {
+    upcast(this)->setBlendMode(blendMode);
+}
+
+View::BlendMode View::getBlendMode() const noexcept {
+    return upcast(this)->getBlendMode();
+}
 
 } // namespace filament

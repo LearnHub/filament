@@ -84,6 +84,7 @@ void selectPhysicalDevice(VulkanContext& context) {
                 continue;
             }
             if (props.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                assert(props.timestampValidBits > 0);
                 context.graphicsQueueFamilyIndex = j;
             }
         }
@@ -150,7 +151,7 @@ void selectPhysicalDevice(VulkanContext& context) {
 
 void createVirtualDevice(VulkanContext& context) {
     VkDeviceQueueCreateInfo deviceQueueCreateInfo[1] = {};
-    static const float queuePriority[] = {1.0f};
+    const float queuePriority[] = {1.0f};
     VkDeviceCreateInfo deviceCreateInfo = {};
     std::vector<const char*> deviceExtensionNames = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -182,6 +183,7 @@ void createVirtualDevice(VulkanContext& context) {
     ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkCreateDevice error.");
     vkGetDeviceQueue(context.device, context.graphicsQueueFamilyIndex, 0,
             &context.graphicsQueue);
+
     VkCommandPoolCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     createInfo.flags =
@@ -190,6 +192,15 @@ void createVirtualDevice(VulkanContext& context) {
     result = vkCreateCommandPool(context.device, &createInfo, VKALLOC, &context.commandPool);
     ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkCreateCommandPool error.");
 
+    // Create a timestamp pool large enough to hold a pair of queries for each timer.
+    VkQueryPoolCreateInfo tqpCreateInfo = {};
+    tqpCreateInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    tqpCreateInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    tqpCreateInfo.queryCount = context.timestamps.used.size() * 2;
+    result = vkCreateQueryPool(context.device, &tqpCreateInfo, VKALLOC, &context.timestamps.pool);
+    ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkCreateQueryPool error.");
+    context.timestamps.used.reset();
+
     const VmaVulkanFunctions funcs {
         .vkGetPhysicalDeviceProperties = vkGetPhysicalDeviceProperties,
         .vkGetPhysicalDeviceMemoryProperties = vkGetPhysicalDeviceMemoryProperties,
@@ -197,6 +208,8 @@ void createVirtualDevice(VulkanContext& context) {
         .vkFreeMemory = vkFreeMemory,
         .vkMapMemory = vkMapMemory,
         .vkUnmapMemory = vkUnmapMemory,
+        .vkFlushMappedMemoryRanges = vkFlushMappedMemoryRanges,
+        .vkInvalidateMappedMemoryRanges = vkInvalidateMappedMemoryRanges,
         .vkBindBufferMemory = vkBindBufferMemory,
         .vkBindImageMemory = vkBindImageMemory,
         .vkGetBufferMemoryRequirements = vkGetBufferMemoryRequirements,
@@ -645,17 +658,11 @@ VkImageLayout getTextureLayout(TextureUsage usage) {
     // Filament sometimes samples from one miplevel while writing to another level in the same
     // texture (e.g. bloom does this). Moreover we'd like to avoid lots of expensive layout
     // transitions. So, keep it simple and use GENERAL for all color-attachable textures.
-    if (any(usage & TextureUsage::COLOR_ATTACHMENT) && any(usage & TextureUsage::SAMPLEABLE)) {
+    if (any(usage & TextureUsage::COLOR_ATTACHMENT)) {
         return VK_IMAGE_LAYOUT_GENERAL;
     }
 
-    // This case is probably never hit, but we might as well use an optimal layout for textures
-    // that are never sampled from.
-    if (any(usage & TextureUsage::COLOR_ATTACHMENT)) {
-        return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    }
-
-    // Finally, the default layout for a texture is read-only.
+    // Finally, the layout for an immutable texture is optimal read-only.
     return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 

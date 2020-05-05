@@ -230,6 +230,10 @@ void FScene::updateUBOs(utils::Range<uint32_t> visibleRenderables, backend::Hand
     mHasContactShadows = hasContactShadows;
     mRenderableViewUbh = renderableUbh;
     driver.loadUniformBuffer(renderableUbh, { buffer, size });
+
+    if (mSkybox) {
+        mSkybox->commit(driver);
+    }
 }
 
 void FScene::terminate(FEngine& engine) {
@@ -288,9 +292,10 @@ void FScene::prepareDynamicLights(const CameraInfo& camera, ArenaScope& rootAren
         auto li = instances[i];
         lp[gpuIndex].positionFalloff      = { spheres[i].xyz, lcm.getSquaredFalloffInv(li) };
         lp[gpuIndex].colorIntensity       = { lcm.getColor(li), lcm.getIntensity(li) };
-        lp[gpuIndex].directionIES         = { directions[i], 0 };
+        lp[gpuIndex].directionIES         = { directions[i], 0.0f };
         lp[gpuIndex].spotScaleOffset      = lcm.getSpotParams(li).scaleOffset;
-        lp[gpuIndex].shadow               = { shadowInfo[i].pack(), 0 };
+        lp[gpuIndex].shadow               = { shadowInfo[i].pack() };
+        lp[gpuIndex].type                 = lcm.isPointLight(li) ? 0u : 1u;
     }
 
     driver.loadUniformBuffer(lightUbh, { lp, positionalLightCount * sizeof(LightsUib) });
@@ -388,7 +393,7 @@ bool FScene::hasEntity(Entity entity) const noexcept {
     return mEntities.find(entity) != mEntities.end();
 }
 
-void FScene::setSkybox(FSkybox const* skybox) noexcept {
+void FScene::setSkybox(FSkybox* skybox) noexcept {
     std::swap(mSkybox, skybox);
     if (skybox) {
         remove(skybox->getEntity());
@@ -399,14 +404,23 @@ void FScene::setSkybox(FSkybox const* skybox) noexcept {
 }
 
 bool FScene::hasContactShadows() const noexcept {
-    bool hasContactShadows = mHasContactShadows;
+    // find out if at least one light has contact-shadow enabled
+    // TODO: cache the the result of this Loop in the LightManager
+    bool hasContactShadows = false;
     auto& lcm = mEngine.getLightManager();
-    FLightManager::Instance directionalLight = mLightData.elementAt<LIGHT_INSTANCE>(0);
-    if (directionalLight.isValid()) {
-        auto const& shadowOoptions = lcm.getShadowOptions(directionalLight);
-        hasContactShadows = hasContactShadows && shadowOoptions.screenSpaceContactShadows;
+    auto pFirst = mLightData.begin<LIGHT_INSTANCE>();
+    auto pLast = mLightData.end<LIGHT_INSTANCE>();
+    while (pFirst != pLast && !hasContactShadows) {
+        if (pFirst->isValid()) {
+            auto const& shadowOptions = lcm.getShadowOptions(*pFirst);
+            hasContactShadows = shadowOptions.screenSpaceContactShadows;
+        }
+        ++pFirst;
     }
-    return hasContactShadows;
+
+    // at least some renderables in the scene must have contact-shadows enabled
+    // TODO: we should refine this with only the visible ones
+    return hasContactShadows && mHasContactShadows;
 }
 
 } // namespace details
@@ -417,7 +431,7 @@ bool FScene::hasContactShadows() const noexcept {
 
 using namespace details;
 
-void Scene::setSkybox(Skybox const* skybox) noexcept {
+void Scene::setSkybox(Skybox* skybox) noexcept {
     upcast(this)->setSkybox(upcast(skybox));
 }
 

@@ -35,7 +35,7 @@
 #include "fg/FrameGraphPassResources.h"
 #include "fg/ResourceAllocator.h"
 
-
+#include <utils/compiler.h>
 #include <utils/Panic.h>
 #include <utils/Systrace.h>
 #include <utils/vector.h>
@@ -161,6 +161,11 @@ void FRenderer::render(FView const* view) {
 
     assert(mSwapChain);
 
+    if (mBeginFrameInternal) {
+        mBeginFrameInternal();
+        mBeginFrameInternal = {};
+    }
+
     if (UTILS_LIKELY(view && view->getScene())) {
         // per-renderpass data
         ArenaScope rootArena(mPerRenderPassArena);
@@ -199,14 +204,17 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
     uint8_t msaa = view.getSampleCount();
     float2 scale = view.updateScale(mFrameInfoManager.getLastFrameInfo());
     const View::QualityLevel upscalingQuality = view.getDynamicResolutionOptions().quality;
+    auto bloomOptions = view.getBloomOptions();
+    auto dofOptions = view.getDepthOfFieldOptions();
     auto aoOptions = view.getAmbientOcclusionOptions();
     if (!hasPostProcess) {
-        // dynamic scaling and FXAA are part of the post-process phase and can't happen if
-        // it's disabled.
-        fxaa = false;
-        dithering = false;
-        scale = 1.0f;
+        // disable all effects that are part of post-processing
         msaa = 1;
+        dofOptions.enabled = false;
+        bloomOptions.enabled = false;
+        dithering = false;
+        fxaa = false;
+        scale = 1.0f;
     }
 
     const bool scaled = any(notEqual(scale, float2(1.0f)));
@@ -258,43 +266,47 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
 
     FrameGraph fg(engine.getResourceAllocator());
 
-    const TargetBufferFlags discardedFlags = view.getDiscardedTargetBuffers();
+    const TargetBufferFlags discardedFlags = mDiscardedFlags;
+    const TargetBufferFlags clearFlags = mClearFlags;
+    const float4 clearColor = mClearOptions.clearColor;
 
-    TargetBufferFlags clearFlags = (view.getClearFlags() & TargetBufferFlags::COLOR);
-
-    // if the depth-buffer is discarded, then we clear it -- the corollary is that if the user
-    // doesn't ask for the depth buffer to be discarded, then we keep it. This is needed if
-    // the user wants to keep the depth buffer between two calls to render(). This of course
-    // only works when post-processing is disabled.
-    if (any(discardedFlags & TargetBufferFlags::DEPTH)) {
-        clearFlags |= TargetBufferFlags::DEPTH;
-    }
-
-    const float4 clearColor = view.getClearColor();
-
-    // Figure out if we need to blend this view into the framebuffer. Maybe this should be
-    // explicit, but since we don't have an API right now, we use heuristics:
-    // - we are keeping the color buffer before rendering, and
-    // - we are not clearing or clearing with alpha
-    // FIXME: make this an explicit API
-    const bool blending = !(discardedFlags & TargetBufferFlags::COLOR)
-            && (!(clearFlags & TargetBufferFlags::COLOR) || clearColor.a < 1.0);
-
-    // If the swapchain is transparent or if we blend into it, we need to allocate our intermediate
-    // buffers with an alpha channel.
-    // FIXME: this doesn't work when the target is a user provided rendertarget
-    const bool translucent = mSwapChain->isTransparent() || blending;
-
-    const TextureFormat hdrFormat = getHdrFormat(view, translucent);
+    // Renderer's ClearOptions apply once at the beginning of the frame (not for each View),
+    // however, it's implemented as part of executing a render pass on the current render target,
+    // and that happens for each View. So we need to disable clearing after the 1st View has
+    // been processed.
+    mDiscardedFlags &= ~TargetBufferFlags::COLOR;
+    mClearFlags &= ~TargetBufferFlags::COLOR;
 
     const Handle<HwRenderTarget> viewRenderTarget = getRenderTarget(view);
     FrameGraphRenderTargetHandle fgViewRenderTarget = fg.import<FrameGraphRenderTarget>(
             "viewRenderTarget", {
-                .viewport = DEBUG_DYNAMIC_SCALING ? svp : vp, .clearFlags = clearFlags }, {
+                    .viewport = DEBUG_DYNAMIC_SCALING ? svp : vp,
+                    .clearColor = clearColor,
+                    .clearFlags = clearFlags
+            }, {
                     .target = viewRenderTarget,
                     .params = {
                             .flags = { .discardStart = discardedFlags },
                     }});
+
+
+    const bool blending = view.getBlendMode() == View::BlendMode::TRANSLUCENT;
+    // If the swapchain is transparent or if we blend into it, we need to allocate our intermediate
+    // buffers with an alpha channel.
+    // FIXME: this doesn't work when the target is a user provided rendertarget
+    const bool translucent = mSwapChain->isTransparent() || blending;
+    const TextureFormat hdrFormat = getHdrFormat(view, translucent);
+
+    const ColorPassConfig config {
+            .vp = vp,
+            .svp = svp,
+            .scale = scale,
+            .hdrFormat = hdrFormat,
+            .msaa = msaa,
+            .clearFlags = clearFlags,
+            .clearColor = clearColor,
+            .hasContactShadows = scene.hasContactShadows()
+    };
 
     /*
      * Depth + Color passes
@@ -305,7 +317,8 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
     pass.setGeometry(scene.getRenderableData(), view.getVisibleRenderables(), scene.getRenderableUBO());
 
     view.updatePrimitivesLod(engine, cameraInfo,scene.getRenderableData(), view.getVisibleRenderables());
-    view.prepareCamera(cameraInfo, svp);
+    view.prepareCamera(cameraInfo);
+    view.prepareViewport(svp);
     view.commitUniforms(driver);
 
 
@@ -337,17 +350,6 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
     pass.newCommandBuffer();
     pass.appendCommands(RenderPass::COLOR);
     pass.sortCommands();
-
-    const ColorPassConfig config {
-            .vp = vp,
-            .svp = svp,
-            .scale = scale,
-            .hdrFormat = hdrFormat,
-            .msaa = msaa,
-            .clearFlags = clearFlags,
-            .clearColor = clearColor,
-            .hasContactShadows = scene.hasContactShadows()
-    };
 
     // We use a framegraph pass to wait for froxelization to finish (so it can be done
     // in parallel with .compile()
@@ -383,9 +385,12 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
             TextureFormat::RGBA8 : getLdrFormat(translucent); // e.g. RGB8 or RGBA8
 
     if (hasPostProcess) {
+        if (dofOptions.enabled) {
+            input = ppm.dof(fg, input, dofOptions, cameraInfo);
+        }
         if (toneMapping) {
             input = ppm.toneMapping(fg, input, ldrFormat, translucent, fxaa, scale,
-                    view.getBloomOptions(), dithering);
+                    bloomOptions, dithering);
         }
         if (fxaa) {
             input = ppm.fxaa(fg, input, ldrFormat, !toneMapping || translucent);
@@ -394,7 +399,8 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
             if (UTILS_LIKELY(!blending && upscalingQuality == View::QualityLevel::LOW)) {
                 input = ppm.opaqueBlit(fg, input, { .format = ldrFormat });
             } else {
-                input = ppm.blendBlit(fg, true, upscalingQuality, input, { .format = ldrFormat });
+                input = ppm.blendBlit(fg, true, upscalingQuality, input,
+                        { .format = ldrFormat });
             }
         }
     }
@@ -414,7 +420,8 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
         if (UTILS_LIKELY(!blending && upscalingQuality == View::QualityLevel::LOW)) {
             input = ppm.opaqueBlit(fg, input, { .format = ldrFormat });
         } else {
-            input = ppm.blendBlit(fg, true, upscalingQuality, input, { .format = ldrFormat });
+            input = ppm.blendBlit(fg, true, upscalingQuality, input,
+                    { .format = ldrFormat });
         }
     }
 
@@ -558,16 +565,16 @@ FrameGraphId<FrameGraphTexture> FRenderer::colorPass(FrameGraph& fg, const char*
         FrameGraphId<FrameGraphTexture> ssr;
         FrameGraphId<FrameGraphTexture> structure;
         FrameGraphRenderTargetHandle rt{};
+        float4 clearColor;
     };
-
-    float4 clearColor = config.clearColor;
 
     auto& colorPass = fg.addPass<ColorPassData>(name,
             [&](FrameGraph::Builder& builder, ColorPassData& data) {
 
-                TargetBufferFlags clearDepthFlags = TargetBufferFlags::NONE;
-                TargetBufferFlags clearColorFlags = TargetBufferFlags::NONE;
                 Blackboard& blackboard = fg.getBlackboard();
+                TargetBufferFlags clearDepthFlags = TargetBufferFlags::NONE;
+                TargetBufferFlags clearColorFlags = config.clearFlags & TargetBufferFlags::COLOR;
+                data.clearColor = config.clearColor;
 
                 data.ssr  = blackboard.get<FrameGraphTexture>("ssr");
                 data.ssao = blackboard.get<FrameGraphTexture>("ssao");
@@ -588,12 +595,20 @@ FrameGraphId<FrameGraphTexture> FRenderer::colorPass(FrameGraph& fg, const char*
                 }
 
                 if (!data.color.isValid()) {
-                    clearColorFlags = TargetBufferFlags::COLOR;
-                    if (!(config.clearFlags &  TargetBufferFlags::COLOR)) {
-                        // the View doesn't ask for a clear, but we're creating a new color
-                        // intermediate buffer, so it must be cleared with transparent pixels.
-                        clearColor = {};
+                    // we're allocating a new buffer, so its content is undefined and we might need
+                    // to clear it.
+
+                    if (view.getBlendMode() == View::BlendMode::TRANSLUCENT) {
+                        // if the View is going to be blended in, then always clear to transparent
+                        clearColorFlags |= TargetBufferFlags::COLOR;
+                        data.clearColor = {};
                     }
+
+                    if (view.isSkyboxVisible()) {
+                        // if the skybox is visible, then we don't need to clear at all
+                        clearColorFlags &= ~TargetBufferFlags::COLOR;
+                    }
+
                     data.color = builder.createTexture("Color Buffer", colorBufferDesc);
                 }
 
@@ -616,24 +631,33 @@ FrameGraphId<FrameGraphTexture> FRenderer::colorPass(FrameGraph& fg, const char*
                 data.rt = builder.createRenderTarget("Color Pass Target", {
                         .attachments = { data.color, data.depth },
                         .samples = config.msaa,
-                        .clearFlags = config.clearFlags | clearColorFlags | clearDepthFlags });
+                        .clearFlags = clearColorFlags | clearDepthFlags });
             },
             [=, &view](FrameGraphPassResources const& resources,
                             ColorPassData const& data, DriverApi& driver) {
+                auto out = resources.get(data.rt);
 
                 // set samplers and uniforms
                 PostProcessManager& ppm = getEngine().getPostProcessManager();
-                view.prepareSSAO(data.ssao.isValid() ? resources.getTexture(data.ssao) : ppm.getOneTexture());
+                view.prepareSSAO(data.ssao.isValid() ?
+                        resources.getTexture(data.ssao) : ppm.getOneTexture());
+
+                assert(data.structure.isValid());
                 if (data.structure.isValid()) {
-                    view.prepareStructure(resources.getTexture(data.structure));
+                    const auto& structure = resources.getTexture(data.structure);
+                    view.prepareStructure(structure ? structure : ppm.getOneTexture());
                 }
+
+                // TODO: check what getTexture() returns
                 if (data.ssr.isValid()) {
                     view.prepareSSR(resources.getTexture(data.ssr), config.refractionLodOffset);
                 }
+
+                view.prepareViewport(static_cast<filament::Viewport&>(out.params.viewport));
                 view.commitUniforms(driver);
 
-                auto out = resources.get(data.rt);
-                out.params.clearColor = clearColor;
+                out.params.clearColor = data.clearColor;
+
                 pass.execute(resources.getPassName(), out.target, out.params);
 
                 // color pass is typically heavy and we don't have much CPU work left after
@@ -716,77 +740,114 @@ bool FRenderer::beginFrame(FSwapChain* swapChain, uint64_t vsyncSteadyClockTimeN
     FEngine& engine = getEngine();
     FEngine::DriverApi& driver = engine.getDriverApi();
 
-    mSwapChain = swapChain;
-    swapChain->makeCurrent(driver);
-
-    // NOTE: this makes synchronous calls to the driver
-    driver.updateStreams(&driver);
-
-    driver.beginFrame(appVsync.time_since_epoch().count(), mFrameId, callback, user);
-
-    if (!mFrameSkipper.beginFrame()) {
-        driver.endFrame(mFrameId);
-        engine.flush();
-        return false;
-    }
-
-    // This need to occur after the backend beginFrame() because some backends need to start
-    // a command buffer before creating a fence.
-    mFrameInfoManager.beginFrame({
-            .targetFrameTime = FrameInfo::duration{ float(mFrameRateOptions.interval) / mDisplayInfo.refreshRate },
-            .headRoomRatio = mFrameRateOptions.headRoomRatio,
-            .oneOverTau = mFrameRateOptions.scaleRate,
-            .historySize = mFrameRateOptions.history
-    }, mFrameId);
-
-#if 0 // work-in-progress
-    if (vsyncSteadyClockTimeNano) {
-        const size_t interval = mFrameRateOptions.interval; // user requested swap-interval;
-        const steady_clock::duration refreshPeriod(uint64_t(1e9 / mDisplayInfo.refreshRate));
-        const steady_clock::duration presentationDeadline(mDisplayInfo.presentationDeadlineNanos);
-        const steady_clock::duration vsyncOffset(mDisplayInfo.vsyncOffsetNanos);
-
-        // hardware vsync timestamp
-        steady_clock::time_point hwVsync = appVsync - vsyncOffset;
-
-        // compute our desired presentation time. We can't pick a desired presentation time
-        // that's too far, or we won't be able to dequeue buffers.
-        steady_clock::time_point desiredPresentationTime = hwVsync + 2 * interval * refreshPeriod;
-
-        // Compute the deadline. This deadline is when the GPU must be finished.
-        // The deadline has 1ms backed in it on Android.
-        steady_clock::time_point deadline = desiredPresentationTime - presentationDeadline;
-
-        // one important thing is to make sure that the deadline is comfortably later than
-        // when the gpu will finish, otherwise we'll have inconsistent latency/frames.
-
-        // TODO: evaluate if we can make it in time, and if not why.
-        // If the problem is cpu+gpu latency we can try to push the desired presentation time
-        // further away, but this has limits, as only 2 buffers are dequeuable.
-        // If the problem is the gpu is overwhelmed, then we need to
-        //  - see if there is more headroom in dynamic resolution
-        //  - or start skipping frames. Ideally lower the framerate too.
-
-        // presentation time is set to the middle of the period we're interested in
-        steady_clock::time_point presentationTime = desiredPresentationTime - refreshPeriod / 2;
-        driver.setPresentationTime(presentationTime.time_since_epoch().count());
-    }
-#endif
-
     // latch the frame time
     std::chrono::duration<double> time(appVsync - mUserEpoch);
     float h = float(time.count());
     float l = float(time.count() - h);
     mShaderUserTime = { h, l, 0, 0 };
 
-    // ask the engine to do what it needs to (e.g. updates light buffer, materials...)
-    engine.prepare();
+    // We always discard and clear the depth+stencil buffers -- we don't allow sharing these
+    // across views (clear implies discard)
+    mDiscardedFlags = ((mClearOptions.discard || mClearOptions.clear) ?
+                       TargetBufferFlags::COLOR : TargetBufferFlags::NONE)
+                      | TargetBufferFlags::DEPTH_AND_STENCIL;
 
-    return true;
+    mClearFlags = (mClearOptions.clear ? TargetBufferFlags::COLOR : TargetBufferFlags::NONE)
+                  | TargetBufferFlags::DEPTH_AND_STENCIL;
+
+    mBeginFrameInternal = {};
+
+    mSwapChain = swapChain;
+    swapChain->makeCurrent(driver);
+
+    // NOTE: this makes synchronous calls to the driver
+    driver.updateStreams(&driver);
+
+    // gives the backend a chance to execute periodic tasks
+    driver.tick();
+
+    /*
+    * From this point, we can't do any more work in beginFrame() because the user could choose
+    * to ignore the return value and render the frame anyways -- which is perfectly fine.
+    * The remaining work will be done when the first render() call is made.
+    */
+    auto beginFrameInternal = [=]() {
+        FEngine& engine = getEngine();
+        FEngine::DriverApi& driver = engine.getDriverApi();
+
+        driver.beginFrame(appVsync.time_since_epoch().count(), mFrameId, callback, user);
+
+        // This need to occur after the backend beginFrame() because some backends need to start
+        // a command buffer before creating a fence.
+        mFrameInfoManager.beginFrame({
+                .targetFrameTime = FrameInfo::duration{
+                        float(mFrameRateOptions.interval) / mDisplayInfo.refreshRate },
+                .headRoomRatio = mFrameRateOptions.headRoomRatio,
+                .oneOverTau = mFrameRateOptions.scaleRate,
+                .historySize = mFrameRateOptions.history
+        }, mFrameId);
+
+        if (false && vsyncSteadyClockTimeNano) { // work in progress
+            const size_t interval = mFrameRateOptions.interval; // user requested swap-interval;
+            const steady_clock::duration refreshPeriod(uint64_t(1e9 / mDisplayInfo.refreshRate));
+            const steady_clock::duration presentationDeadline(mDisplayInfo.presentationDeadlineNanos);
+            const steady_clock::duration vsyncOffset(mDisplayInfo.vsyncOffsetNanos);
+
+            // hardware vsync timestamp
+            steady_clock::time_point hwVsync = appVsync - vsyncOffset;
+
+            // compute our desired presentation time. We can't pick a desired presentation time
+            // that's too far, or we won't be able to dequeue buffers.
+            steady_clock::time_point desiredPresentationTime = hwVsync + 2 * interval * refreshPeriod;
+
+            // Compute the deadline. This deadline is when the GPU must be finished.
+            // The deadline has 1ms backed in it on Android.
+            UTILS_UNUSED_IN_RELEASE
+            steady_clock::time_point deadline = desiredPresentationTime - presentationDeadline;
+
+            // one important thing is to make sure that the deadline is comfortably later than
+            // when the gpu will finish, otherwise we'll have inconsistent latency/frames.
+
+            // TODO: evaluate if we can make it in time, and if not why.
+            // If the problem is cpu+gpu latency we can try to push the desired presentation time
+            // further away, but this has limits, as only 2 buffers are dequeuable.
+            // If the problem is the gpu is overwhelmed, then we need to
+            //  - see if there is more headroom in dynamic resolution
+            //  - or start skipping frames. Ideally lower the framerate too.
+
+            // presentation time is set to the middle of the period we're interested in
+            steady_clock::time_point presentationTime = desiredPresentationTime - refreshPeriod / 2;
+            driver.setPresentationTime(presentationTime.time_since_epoch().count());
+        }
+
+        // ask the engine to do what it needs to (e.g. updates light buffer, materials...)
+        engine.prepare();
+    };
+
+    if (mFrameSkipper.beginFrame()) {
+        // if beginFrame() returns true, we are expecting a call to endFrame(),
+        // so do the beginFrame work right now, instead of requiring a call to render()
+        beginFrameInternal();
+        return true;
+    }
+
+    // however, if we return false, the user is allowed to ignore us and render a frame anyways,
+    // so we need to delay this work until that happens.
+    mBeginFrameInternal = beginFrameInternal;
+
+    // we need to flush in this case, to make sure the tick() call is executed at some point
+    engine.flush();
+
+    return false;
 }
 
 void FRenderer::endFrame() {
     SYSTRACE_CALL();
+
+    if (UTILS_UNLIKELY(mBeginFrameInternal)) {
+        mBeginFrameInternal();
+        mBeginFrameInternal = {};
+    }
 
     FEngine& engine = getEngine();
     FEngine::DriverApi& driver = engine.getDriverApi();
@@ -806,6 +867,9 @@ void FRenderer::endFrame() {
     }
 
     driver.endFrame(mFrameId);
+
+    // gives the backend a chance to execute periodic tasks
+    driver.tick();
 
     // do this before engine.flush()
     engine.getResourceAllocator().gc();
@@ -931,6 +995,10 @@ void Renderer::setDisplayInfo(const DisplayInfo& info) noexcept {
 
 void Renderer::setFrameRateOptions(FrameRateOptions const& options) noexcept {
     upcast(this)->setFrameRateOptions(options);
+}
+
+void Renderer::setClearOptions(const ClearOptions& options) {
+    upcast(this)->setClearOptions(options);
 }
 
 } // namespace filament

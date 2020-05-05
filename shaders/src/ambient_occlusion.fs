@@ -26,12 +26,12 @@ float SpecularAO_Lagarde(float NoV, float visibility, float roughness) {
 float sphericalCapsIntersection(float cosCap1, float cosCap2, float cosDistance) {
     // Oat and Sander 2007, "Ambient Aperture Lighting"
     // Approximation mentioned by Jimenez et al. 2016
-    float r1 = acosFast(cosCap1);
-    float r2 = acosFast(cosCap2);
+    float r1 = acosFastPositive(cosCap1);
+    float r2 = acosFastPositive(cosCap2);
     float d  = acosFast(cosDistance);
 
     // We work with cosine angles, replace the original paper's use of
-    // min(r1, r2) with max(cosCap1, cosCap2)
+    // cos(min(r1, r2)) with max(cosCap1, cosCap2)
     // We also remove a multiplication by 2 * PI to simplify the computation
     // since we divide by 2 * PI in computeBentSpecularAO()
 
@@ -42,8 +42,8 @@ float sphericalCapsIntersection(float cosCap1, float cosCap2, float cosDistance)
     }
 
     float delta = abs(r1 - r2);
-    float x = 1.0 - saturate((d - delta) / max(r1 + r2 - delta, 0.0001));
-    // simplified smoothsteph()
+    float x = 1.0 - saturate((d - delta) / max(r1 + r2 - delta, 1e-4));
+    // simplified smoothstep()
     float area = sq(x) * (-2.0 * x + 3.0);
     return area * (1.0 - max(cosCap1, cosCap2));
 }
@@ -63,7 +63,7 @@ float SpecularAO_Cones(float NoV, float visibility, float roughness) {
 
     // Remove the 2 * PI term from the denominator, it cancels out the same term from
     // sphericalCapsIntersection()
-    float ao = sphericalCapsIntersection(cosAv, cosAs, 0.5 * cosB + 0.5) / (1.0 - cosAs);
+    float ao = sphericalCapsIntersection(cosAv, cosAs, cosB) / (1.0 - cosAs);
     // Smoothly kill specular AO when entering the perceptual roughness range [0.1..0.3]
     // Without this, specular AO can remove all reflections, which looks bad on metals
     return mix(1.0, ao, smoothstep(0.01, 0.09, roughness));

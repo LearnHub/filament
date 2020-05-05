@@ -21,6 +21,7 @@
 #include <filament/Color.h>
 
 #include <utils/compiler.h>
+#include <utils/Entity.h>
 #include <utils/EntityInstance.h>
 
 #include <math/mathfwd.h>
@@ -145,6 +146,21 @@ public:
     using Instance = utils::EntityInstance<LightManager>;
 
     /**
+     * Returns the number of component in the LightManager, not that component are not
+     * guaranteed to be active. Use the EntityManager::isAlive() before use if needed.
+     *
+     * @return number of component in the LightManager
+     */
+    size_t getComponentCount() const noexcept;
+
+    /**
+     * Returns the list of Entity for all components. Use getComponentCount() to know the size
+     * of the list.
+     * @return a pointer to Entity
+     */
+    utils::Entity const* getEntities() const noexcept;
+
+    /**
      * Returns whether a particular Entity is associated with a component of this LightManager
      * @param e An Entity.
      * @return true if this Entity has a component associated with this manager.
@@ -236,22 +252,28 @@ public:
 
         /**
          * Whether screen-space contact shadows are used. This applies regardless of whether a
-         * Renderable is a shadow caster. This setting is currently only used for directional
-         * lights, ignored otherwise.
+         * Renderable is a shadow caster.
          * Screen-space contact shadows are typically useful in large scenes.
          * (off by default)
          */
         bool screenSpaceContactShadows = false;
 
         /**
-         * Number of ray-marching steps for screen-space contact shadows.
-         * (8 by default)
+         * Number of ray-marching steps for screen-space contact shadows (8 by default).
+         *
+         * CAUTION: this parameter is ignored for all lights except the directional/sun light,
+         *          all other lights use the same value set for the directional/sun light.
+         *
          */
         uint8_t stepCount = 8;
 
         /**
          * Maximum shadow-occluder distance for screen-space contact shadows (world units).
          * (30 cm by default)
+         *
+         * CAUTION: this parameter is ignored for all lights except the directional/sun light,
+         *          all other lights use the same value set for the directional/sun light.
+         *
          */
         float maxShadowDistance = 0.3;
     };
@@ -351,8 +373,25 @@ public:
          *
          * For example, the sun's illuminance is about 100,000 lux.
          *
+         * This method overrides any prior calls to intensity or intensityCandela.
+         *
          */
         Builder& intensity(float intensity) noexcept;
+
+        /**
+         * Sets the initial intensity of a spot or point light in candela.
+         *
+         * @param intensity Luminous intensity in *candela*.
+         *
+         * @return This Builder, for chaining calls.
+         *
+         * @note
+         * This method is equivalent to calling intensity(float intensity) for directional lights
+         * (Type.DIRECTIONAL or Type.SUN).
+         *
+         * This method overrides any prior calls to intensity or intensityCandela.
+         */
+        Builder& intensityCandela(float intensity) noexcept;
 
         /**
          * Sets the initial intensity of a light in watts.
@@ -376,6 +415,8 @@ public:
          *
          * @note
          * This call is equivalent to `Builder::intensity(efficiency * 683 * watts);`
+         *
+         * This method overrides any prior calls to intensity or intensityCandela.
          */
         Builder& intensity(float watts, float efficiency) noexcept;
 
@@ -402,14 +443,15 @@ public:
         /**
          * Defines a spot light'st angular falloff attenuation.
          *
-         * A spot light is defined by a position, a direction and two cone angles,
-         * \p inner and \p outer. These two angles are used to define the angular falloff
-         * attenuation of the spot light.
+         * A spot light is defined by a position, a direction and two cones, \p inner and \p outer.
+         * These two cones are used to define the angular falloff attenuation of the spot light
+         * and are defined by the angle from the center axis to where the falloff begins (i.e.
+         * cones are defined by their half-angle).
          *
-         * @param inner inner cone angle in *radians* between 0 and @f$ \pi @f$
-
-         * @param outer outer cone angle in *radians* between 0 and @f$ \pi @f$
-
+         * @param inner inner cone angle in *radians* between 0 and @f$ \pi/2 @f$
+         *
+         * @param outer outer cone angle in *radians* between \p inner and @f$ \pi/2 @f$
+         *
          * @return This Builder, for chaining calls.
          *
          * @note
@@ -425,7 +467,7 @@ public:
          * The Sun as seen from Earth has an angular size of 0.526° to 0.545°
          *
          * @param angularRadius sun's radius in degree. Default is 0.545°.
-
+         *
          * @return This Builder, for chaining calls.
          */
         Builder& sunAngularRadius(float angularRadius) noexcept;
@@ -600,6 +642,20 @@ public:
     }
 
     /**
+     * Dynamically updates the light's intensity in candela. The intensity can be negative.
+     *
+     * @param i         Instance of the component obtained from getInstance().
+     * @param intensity Luminous intensity in *candela*.
+     *
+     * @note
+     * This method is equivalent to calling setIntensity(float intensity) for directional lights
+     * (Type.DIRECTIONAL or Type.SUN).
+     *
+     * @see Builder.intensityCandela(float intensity)
+     */
+    void setIntensityCandela(Instance i, float intensity) noexcept;
+
+    /**
      * returns the light's luminous intensity in lumen.
      *
      * @param i     Instance of the component obtained from getInstance().
@@ -631,8 +687,8 @@ public:
      * Dynamically updates a spot light's cone as angles
      *
      * @param i     Instance of the component obtained from getInstance().
-     * @param inner inner cone angle in *radians* between 0 and @f$ \pi @f$
-     * @param outer outer cone angle in *radians* between 0 and @f$ \pi @f$
+     * @param inner inner cone angle in *radians* between 0 and pi/2
+     * @param outer outer cone angle in *radians* between inner and pi/2
      *
      * @see Builder.spotLightCone()
      */
@@ -720,6 +776,20 @@ public:
      * @param i     Instance of the component obtained from getInstance().
      */
     bool isShadowCaster(Instance i) const noexcept;
+
+    /**
+     * Helper to process all components with a given function
+     * @tparam F    a void(Entity entity, Instance instance)
+     * @param func  a function of type F
+     */
+    template<typename F>
+    void forEachComponent(F func) noexcept {
+        utils::Entity const* const pEntity = getEntities();
+        for (size_t i = 0, c = getComponentCount(); i < c; i++) {
+            // Instance 0 is the invalid instance
+            func(pEntity[i], Instance(i + 1));
+        }
+    }
 };
 
 } // namespace filament

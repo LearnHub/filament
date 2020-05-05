@@ -21,6 +21,7 @@
 #include <filament/MaterialInstance.h>
 #include <filament/RenderableManager.h>
 #include <filament/Scene.h>
+#include <filament/Skybox.h>
 #include <filament/TransformManager.h>
 #include <filament/VertexBuffer.h>
 #include <filament/View.h>
@@ -43,6 +44,7 @@ struct App {
     IndexBuffer* ib;
     Material* mat;
     Camera* cam;
+    Skybox* skybox;
     Entity renderable;
 };
 
@@ -62,11 +64,11 @@ static constexpr uint16_t TRIANGLE_INDICES[3] = { 0, 1, 2 };
 int main(int argc, char** argv) {
     Config config;
     config.title = "animation";
-    config.backend = Engine::Backend::VULKAN;
 
     App app;
     auto setup = [&app](Engine* engine, View* view, Scene* scene) {
-        view->setClearColor({0.1, 0.125, 0.25, 1.0});
+        app.skybox = Skybox::Builder().color({0.1, 0.125, 0.25, 1.0}).build(*engine);
+        scene->setSkybox(app.skybox);
         view->setPostProcessingEnabled(false);
         app.vb = VertexBuffer::Builder()
                 .vertexCount(3).bufferCount(1)
@@ -88,6 +90,7 @@ int main(int argc, char** argv) {
     };
 
     auto cleanup = [&app](Engine* engine, View*, Scene*) {
+        engine->destroy(app.skybox);
         engine->destroy(app.renderable);
         engine->destroy(app.mat);
         engine->destroy(app.vb);

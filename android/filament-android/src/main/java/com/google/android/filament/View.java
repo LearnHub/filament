@@ -68,6 +68,8 @@ public class View {
     private BloomOptions mBloomOptions;
     private FogOptions mFogOptions;
     private RenderTarget mRenderTarget;
+    private BlendMode mBlendMode;
+    private DepthOfFieldOptions mDepthOfFieldOptions;
 
     /**
      * Generic Quality Level
@@ -77,6 +79,11 @@ public class View {
         MEDIUM,
         HIGH,
         ULTRA
+    }
+
+    public enum BlendMode {
+        OPAQUE,
+        TRANSLUCENT
     }
 
     /**
@@ -303,6 +310,23 @@ public class View {
          */
         public boolean enabled = false;
     }
+
+    /**
+     * Options to control Depth of Field (DoF) effect in the scene
+     *
+     * @see View#setDepthOfFieldOptions
+     */
+    public static class DepthOfFieldOptions {
+
+        /** focus distance in world units */
+        public float focusDistance = 10.0f;
+
+        /** scale factor controlling the amount of blur (values other than 1.0 are not physically correct)*/
+        public float blurScale = 1.0f;
+
+        /** enable or disable Depth of field effect */
+        public boolean enabled = false;
+    };
 
     /**
      * Structure used to set the color precision for the rendering of a <code>View</code>.
@@ -556,39 +580,23 @@ public class View {
     }
 
     /**
-     * Sets the color used to clear the Viewport when rendering this View.
+     * Sets the blending mode used to draw the view into the SwapChain.
      *
-     * <p>This is ignored if a {@link Skybox} is present or if clearing has been disabled
-     * via {@link #setClearTargets}. Defaults to black.</p>
-     *
-     * @see #getClearColor
+     * @param blendMode either {@link BlendMode#OPAQUE} or {@link BlendMode#TRANSLUCENT}
+     * @see #getBlendMode
      */
-    public void setClearColor(
-            @LinearColor float r, @LinearColor float g, @LinearColor float b, float a) {
-        nSetClearColor(getNativeObject(), r, g, b, a);
+    public void setBlendMode(BlendMode blendMode) {
+        mBlendMode = blendMode;
+        nSetBlendMode(getNativeObject(), blendMode.ordinal());
     }
 
     /**
-     * Returns the View clear color in a provided 4-tuple.
      *
-     * @return A reference to the passed-in array.
-     *
-     * @see #setClearColor
+     * @return blending mode set by setBlendMode
+     * @see #setBlendMode
      */
-    @NonNull @Size(min = 4)
-    public float[] getClearColor(@NonNull @Size(min = 4) float[] out) {
-        out = Asserts.assertFloat4(out);
-        nGetClearColor(getNativeObject(), out);
-        return out;
-    }
-
-    /**
-     * Sets which targets to clear (default: true, true, false)
-     *
-     * @see #setClearColor
-     */
-    public void setClearTargets(boolean color, boolean depth, boolean stencil) {
-        nSetClearTargets(getNativeObject(), color, depth, stencil);
+    public BlendMode getBlendMode() {
+        return mBlendMode;
     }
 
     /**
@@ -630,33 +638,12 @@ public class View {
      * By default, the view's associated render target is null, which corresponds to the
      * SwapChain associated with the engine.
      * </p>
-     * <p>
-     * This method discards the content of all the buffers in the render target. See
-     * {@link #setRenderTarget(RenderTarget, EnumSet)} if you need more precise control.
-     * </p>
      *
      * @param target render target associated with view, or null for the swap chain
      */
     public void setRenderTarget(@Nullable RenderTarget target) {
-        setRenderTarget(target, TargetBufferFlags.ALL);
-    }
-
-    /**
-     * Specifies an offscreen render target to render into.
-     *
-     * <p>
-     * By default, the view's associated render target is null, which corresponds to the
-     * SwapChain associated with the engine.
-     * </p>
-     *
-     * @param target render target associated with view, or null for the swap chain
-     * @param flags buffers that need to be discarded before rendering.
-     */
-    public void setRenderTarget(@Nullable RenderTarget target,
-            @NonNull EnumSet<TargetBufferFlags> flags) {
         mRenderTarget = target;
-        nSetRenderTarget(getNativeObject(), target != null ? target.getNativeObject() : 0,
-                TargetBufferFlags.flags(flags));
+        nSetRenderTarget(getNativeObject(), target != null ? target.getNativeObject() : 0);
     }
 
     /**
@@ -954,6 +941,7 @@ public class View {
      * Sets bloom options.
      *
      * @param options Options for bloom.
+     * @see #getBloomOptions
      */
     public void setBloomOptions(@NonNull BloomOptions options) {
         mBloomOptions = options;
@@ -964,9 +952,24 @@ public class View {
     }
 
     /**
+     * Gets the bloom options
+     * @see #setBloomOptions
+     *
+     * @return bloom options currently set.
+     */
+    @NonNull
+    public BloomOptions getBloomOptions() {
+        if (mBloomOptions == null) {
+            mBloomOptions = new BloomOptions();
+        }
+        return mBloomOptions;
+    }
+
+    /**
      * Sets fog options.
      *
      * @param options Options for fog.
+     * @see #getFogOptions
      */
     public void setFogOptions(@NonNull FogOptions options) {
         mFogOptions = options;
@@ -978,17 +981,45 @@ public class View {
     }
 
     /**
-     * Gets the bloom options
+     * Gets the fog options
      *
-     * @return bloom options currently set.
+     * @return fog options currently set.
+     * @see #setFogOptions
      */
     @NonNull
-    public BloomOptions getBloomOptions() {
-        if (mBloomOptions == null) {
-            mBloomOptions = new BloomOptions();
+    public FogOptions getFogOptions() {
+        if (mFogOptions == null) {
+            mFogOptions = new FogOptions();
         }
-        return mBloomOptions;
+        return mFogOptions;
     }
+
+
+    /**
+     * Sets Depth of Field options.
+     *
+     * @param options Options for depth of field effect.
+     * @see #getDepthOfFieldOptions
+     */
+    public void setDepthOfFieldOptions(@NonNull DepthOfFieldOptions options) {
+        mDepthOfFieldOptions = options;
+        nSetDepthOfFieldOptions(getNativeObject(), options.focusDistance, options.blurScale, options.enabled);
+    }
+
+    /**
+     * Gets the Depth of Field options
+     *
+     * @return Depth of Field options currently set.
+     * @see #setDepthOfFieldOptions
+     */
+    @NonNull
+    public DepthOfFieldOptions getDepthOfFieldOptions() {
+        if (mDepthOfFieldOptions == null) {
+            mDepthOfFieldOptions = new DepthOfFieldOptions();
+        }
+        return mDepthOfFieldOptions;
+    }
+
 
     public long getNativeObject() {
         if (mNativeObject == 0) {
@@ -1005,12 +1036,9 @@ public class View {
     private static native void nSetScene(long nativeView, long nativeScene);
     private static native void nSetCamera(long nativeView, long nativeCamera);
     private static native void nSetViewport(long nativeView, int left, int bottom, int width, int height);
-    private static native void nSetClearColor(long nativeView, float r, float g, float b, float a);
-    private static native void nGetClearColor(long nativeView, float[] out);
-    private static native void nSetClearTargets(long nativeView, boolean color, boolean depth, boolean stencil);
     private static native void nSetVisibleLayers(long nativeView, int select, int value);
     private static native void nSetShadowsEnabled(long nativeView, boolean enabled);
-    private static native void nSetRenderTarget(long nativeView, long nativeRenderTarget, int flags);
+    private static native void nSetRenderTarget(long nativeView, long nativeRenderTarget);
     private static native void nSetSampleCount(long nativeView, int count);
     private static native int nGetSampleCount(long nativeView);
     private static native void nSetAntiAliasing(long nativeView, int type);
@@ -1031,5 +1059,6 @@ public class View {
     private static native void nSetAmbientOcclusionOptions(long nativeView, float radius, float bias, float power, float resolution, float intensity, int quality);
     private static native void nSetBloomOptions(long nativeView, long dirtNativeObject, float dirtStrength, float strength, int resolution, float anamorphism, int levels, int blendMode, boolean threshold, boolean enabled);
     private static native void nSetFogOptions(long nativeView, float distance, float maximumOpacity, float height, float heightFalloff, float v, float v1, float v2, float density, float inScatteringStart, float inScatteringSize, boolean fogColorFromIbl, boolean enabled);
-
+    private static native void nSetBlendMode(long nativeView, int blendMode);
+    private static native void nSetDepthOfFieldOptions(long nativeView, float focusDistance, float blurScale, boolean enabled);
 }

@@ -62,11 +62,16 @@ class UTILS_PUBLIC View : public FilamentAPI {
 public:
     using TargetBufferFlags = backend::TargetBufferFlags;
 
-    enum class QualityLevel : int8_t {
+    enum class QualityLevel : uint8_t {
         LOW,
         MEDIUM,
         HIGH,
         ULTRA
+    };
+
+    enum class BlendMode : uint8_t {
+        OPAQUE,
+        TRANSLUCENT
     };
 
     /**
@@ -158,6 +163,15 @@ public:
         float inScatteringSize = -1.0f;     //!< size of in-scattering (>=0 to activate). Good values are >> 1 (e.g. ~10 - 100).
         bool fogColorFromIbl = false;       //!< Fog color will be modulated by the IBL color in the view direction.
         bool enabled = false;               //!< enable or disable fog
+    };
+
+    /**
+     * Options to control Depth of Field (DoF) effect in the scene
+     */
+    struct DepthOfFieldOptions {
+        float focusDistance = 10.0f;        //!< focus distance in world units
+        float blurScale = 1.0f;             //!< a scale factor for the amount of blur
+        bool enabled = false;               //!< enable or disable Depth of field effect
     };
 
     /**
@@ -345,37 +359,19 @@ public:
     Viewport const& getViewport() const noexcept;
 
     /**
-     * Sets the color used to clear the Viewport when rendering this View.
-     * Defaults to black.
+     * Sets the blending mode used to draw the view into the SwapChain.
      *
-     * @param clearColor The color to use to clear the Viewport.
-     * @see setClearTargets
+     * @param blendMode either BlendMode::OPAQUE or BlendMode::TRANSLUCENT
+      * @see getBlendMode
      */
-    void setClearColor(LinearColorA const& clearColor) noexcept;
+    void setBlendMode(BlendMode blendMode) noexcept;
 
-    /**
-     * Returns the View clear color.
-     * @return A constant reference to the View's clear color.
-     */
-    LinearColorA const& getClearColor() const noexcept;
-
-    /**
-     * Sets which targets to clear (default: true, true, false)
-     * @param color     Clear the color buffer. The color buffer is cleared with the color set in
-     *                  setClearColor().
-     * @param depth     Clear the depth buffer. The depth buffer is cleared with an implementation
-     *                  defined value representing the farthest depth.
-     *
-     *                  @note
-     *                  Generally the depth clear value is 1.0, but you shouldn't rely on this
-     *                  because filament may use "inverted depth" in some situations.
-     *
-     *
-     * @param stencil   Clear the stencil buffer. The stencil buffer is cleared with 0.
-     *
-     * @see setClearColor
-     */
-    void setClearTargets(bool color, bool depth, bool stencil) noexcept;
+     /**
+      *
+      * @return blending mode set by setBlendMode
+      * @see setBlendMode
+      */
+    BlendMode getBlendMode() const noexcept;
 
     /**
      * Sets which layers are visible.
@@ -414,13 +410,8 @@ public:
      * SwapChain associated with the engine.
      *
      * @param renderTarget Render target associated with view, or nullptr for the swap chain.
-     * @param discard Buffers that need to be discarded before rendering.
      */
-    void setRenderTarget(RenderTarget* renderTarget,
-            TargetBufferFlags discard = TargetBufferFlags::ALL) noexcept;
-
-    //! @deprecated Please use the other overload and pass nullptr for the renderTarget.
-    void setRenderTarget(TargetBufferFlags discard = TargetBufferFlags::ALL) noexcept;
+    void setRenderTarget(RenderTarget* renderTarget) noexcept;
 
     /**
      * Gets the offscreen render target associated with this view.
@@ -502,6 +493,13 @@ public:
      * @param options options
      */
     void setFogOptions(FogOptions options) noexcept;
+
+    /**
+     * Enables or disables Depth of Field. Disabled by default.
+     *
+     * @param options options
+     */
+    void setDepthOfFieldOptions(DepthOfFieldOptions options) noexcept;
 
     /**
      * Queries the bloom options.
