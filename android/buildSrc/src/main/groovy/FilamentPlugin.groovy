@@ -107,7 +107,7 @@ class MaterialCompiler extends TaskWithBinary {
             if (project.hasProperty("filament_supports_vulkan")) {
                 matcArgs += ['-a', 'vulkan']
             }
-            matcArgs += ['-a', 'opengl', '-p', 'mobile', '-o', getOutputFile(file), file]
+            matcArgs += ['-g', '-a', 'opengl', '-p', 'mobile', '-o', getOutputFile(file), file]
 
             project.exec {
                 standardOutput out

@@ -212,6 +212,8 @@ class MainActivity : Activity() {
         val sampler = TextureSampler()
         sampler.anisotropy = 8.0f
 
+        materialInstance.setParameter("emissiveFactor", Colors.RgbType.LINEAR, 1f, 1f, 1f)
+
         materialInstance.setParameter("baseColor", baseColor, sampler)
         materialInstance.setParameter("normal", normal, sampler)
         materialInstance.setParameter("aoRoughnessMetallic", aoRoughnessMetallic, sampler)

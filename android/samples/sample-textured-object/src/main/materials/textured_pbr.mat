@@ -4,6 +4,10 @@ material {
     name : textured_pbr,
     shadingModel : lit,
     parameters : [
+        {
+            type : float3,
+            name : emissiveFactor
+        },
         // Base color sRGB texture
         {
             type : sampler2d,
@@ -34,7 +38,10 @@ fragment {
 
         prepareMaterial(material);
 
-        material.baseColor = texture(materialParams_baseColor, getUV0());
+        material.baseColor = vec4(0.0, 0.0, 0.0, 1.0);
+
+        material.emissive = vec4(materialParams.emissiveFactor.rgb, 0.0);
+        material.emissive.rgb *= texture(materialParams_baseColor, getUV0()).rgb;
 
         vec3 aoRoughnessMetallic = texture(materialParams_aoRoughnessMetallic, getUV0()).rgb;
         material.ambientOcclusion = aoRoughnessMetallic.r;
