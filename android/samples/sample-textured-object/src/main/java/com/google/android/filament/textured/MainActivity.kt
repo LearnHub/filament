@@ -204,9 +204,6 @@ class MainActivity : Activity() {
         // Note that the textures are stored in drawable-nodpi to prevent the system
         // from automatically resizing them based on the display's density
         baseColor = loadTexture(engine, resources, R.drawable.floor_basecolor, TextureType.COLOR)
-        normal = loadTexture(engine, resources, R.drawable.floor_normal, TextureType.NORMAL)
-        aoRoughnessMetallic = loadTexture(engine, resources,
-                R.drawable.floor_ao_roughness_metallic, TextureType.DATA)
 
         // A texture sampler does not need to be kept around or destroyed
         val sampler = TextureSampler()
@@ -215,8 +212,6 @@ class MainActivity : Activity() {
         materialInstance.setParameter("emissiveFactor", Colors.RgbType.LINEAR, 1f, 1f, 1f)
 
         materialInstance.setParameter("baseColor", baseColor, sampler)
-        materialInstance.setParameter("normal", normal, sampler)
-        materialInstance.setParameter("aoRoughnessMetallic", aoRoughnessMetallic, sampler)
     }
 
     private fun loadImageBasedLight() {

@@ -12,16 +12,6 @@ material {
         {
             type : sampler2d,
             name : baseColor
-        },
-        // Packed ambient occlusion/roughness/metallic RGB texture
-        {
-            type : sampler2d,
-            name : aoRoughnessMetallic
-        },
-        // Normal map RGB texture
-        {
-            type : sampler2d,
-            name : normal
         }
     ],
     // To sample textures our material must declare that it requires
@@ -33,8 +23,6 @@ material {
 
 fragment {
     void material(inout MaterialInputs material) {
-        // The normal map must be set *before* calling prepareMaterial()
-        material.normal = texture(materialParams_normal, getUV0()).xyz * 2.0 - 1.0;
 
         prepareMaterial(material);
 
@@ -43,9 +31,5 @@ fragment {
         material.emissive = vec4(materialParams.emissiveFactor.rgb, 0.0);
         material.emissive.rgb *= texture(materialParams_baseColor, getUV0()).rgb;
 
-        vec3 aoRoughnessMetallic = texture(materialParams_aoRoughnessMetallic, getUV0()).rgb;
-        material.ambientOcclusion = aoRoughnessMetallic.r;
-        material.roughness = aoRoughnessMetallic.g;
-        material.metallic = aoRoughnessMetallic.b;
     }
 }
