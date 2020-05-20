@@ -157,6 +157,11 @@ struct HwStream : public HwBase {
 struct HwTimerQuery : public HwBase {
 };
 
+struct FrameCallback {
+    backend::EndFrameCallback callback = nullptr;
+    void* user = nullptr;
+};
+
 /*
  * Base class of all Driver implementations
  */
@@ -188,10 +193,13 @@ protected:
 
     void scheduleRelease(AcquiredImage&& image) noexcept;
 
+    void scheduleCallback(FrameCallback&& frameCallback) noexcept;
+
 private:
     std::mutex mPurgeLock;
     std::vector<BufferDescriptor> mBufferToPurge;
     std::vector<AcquiredImage> mImagesToPurge;
+    std::vector<FrameCallback> mFramesToPurge;
 };
 
 

@@ -278,7 +278,7 @@ void VulkanDriver::beginFrame(int64_t monotonic_clock_ns, uint32_t frameId,
 void VulkanDriver::setPresentationTime(int64_t monotonic_clock_ns) {
 }
 
-void VulkanDriver::endFrame(uint32_t frameId) {
+void VulkanDriver::endFrame(uint32_t frameId, backend::EndFrameCallback callback, void* user) {
     // Do nothing here; see commit().
 }
 

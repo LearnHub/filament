@@ -109,7 +109,7 @@ TEST_F(BackendTest, MissingRequiredAttributes) {
 
         getDriverApi().flush();
         getDriverApi().commit(swapChain);
-        getDriverApi().endFrame(0);
+        getDriverApi().endFrame(0, nullptr, nullptr);
 
         getDriverApi().stopCapture(0);
 

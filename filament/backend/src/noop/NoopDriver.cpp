@@ -55,7 +55,7 @@ void NoopDriver::beginFrame(int64_t monotonic_clock_ns, uint32_t frameId,
 void NoopDriver::setPresentationTime(int64_t monotonic_clock_ns) {
 }
 
-void NoopDriver::endFrame(uint32_t frameId) {
+void NoopDriver::endFrame(uint32_t frameId, backend::EndFrameCallback callback, void* user) {
 }
 
 void NoopDriver::flush(int) {

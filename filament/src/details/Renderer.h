@@ -79,7 +79,7 @@ public:
 
     bool beginFrame(FSwapChain* swapChain, uint64_t vsyncSteadyClockTimeNano,
             backend::FrameFinishedCallback callback, void* user);
-    void endFrame();
+    void endFrame(backend::EndFrameCallback callback, void* user);
 
     void resetUserTime();
 

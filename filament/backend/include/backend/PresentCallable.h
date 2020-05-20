@@ -105,6 +105,12 @@ private:
  */
 using FrameFinishedCallback = void(*)(PresentCallable callable, void* user);
 
+/** 
+ * EndFrameCallback is a callback function that runs when the final graphics commands
+ * have been executed. It is supported in OpenGL only and is preceeded by a call to glFinish
+ */
+using EndFrameCallback = void(*)(void* user);
+
 } // namespace backend
 } // namespace filament
 

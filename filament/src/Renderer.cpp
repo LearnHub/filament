@@ -841,7 +841,7 @@ bool FRenderer::beginFrame(FSwapChain* swapChain, uint64_t vsyncSteadyClockTimeN
     return false;
 }
 
-void FRenderer::endFrame() {
+void FRenderer::endFrame(backend::EndFrameCallback callback, void* user) {
     SYSTRACE_CALL();
 
     if (UTILS_UNLIKELY(mBeginFrameInternal)) {
@@ -866,7 +866,7 @@ void FRenderer::endFrame() {
         mSwapChain = nullptr;
     }
 
-    driver.endFrame(mFrameId);
+    driver.endFrame(mFrameId, callback, user);
 
     // gives the backend a chance to execute periodic tasks
     driver.tick();
@@ -977,8 +977,8 @@ void Renderer::readPixels(RenderTarget* renderTarget,
             xoffset, yoffset, width, height, std::move(buffer));
 }
 
-void Renderer::endFrame() {
-    upcast(this)->endFrame();
+void Renderer::endFrame(backend::EndFrameCallback callback, void* user) {
+    upcast(this)->endFrame(callback, user);
 }
 
 double Renderer::getUserTime() const {
