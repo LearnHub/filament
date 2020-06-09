@@ -275,7 +275,7 @@ TEST_F(BackendTest, ReadPixels) {
 
         getDriverApi().flush();
         getDriverApi().commit(swapChain);
-        getDriverApi().endFrame(0);
+        getDriverApi().endFrame(0, nullptr, nullptr);
 
         getDriverApi().destroyProgram(program);
         getDriverApi().destroySwapChain(swapChain);

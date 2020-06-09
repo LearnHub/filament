@@ -69,3 +69,20 @@ private:
     long mImage;
     CallbackJni mCallbackUtils;
 };
+
+struct JniFrameCallback {
+    static JniFrameCallback* make(JNIEnv* env, jobject handler, jobject runnable);
+
+    static void invoke(void* user);
+
+private:
+    JniFrameCallback(JNIEnv* env, jobject handler, jobject runnable);
+    JniFrameCallback(JniBufferCallback const &) = delete;
+    JniFrameCallback(JniBufferCallback&&) = delete;
+    ~JniFrameCallback();
+
+    JNIEnv* mEnv;
+    jobject mHandler;
+    jobject mCallback;
+    CallbackJni mCallbackUtils;
+};

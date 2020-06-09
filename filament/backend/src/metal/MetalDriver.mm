@@ -117,7 +117,7 @@ void MetalDriver::execute(std::function<void(void)> fn) noexcept {
 void MetalDriver::setPresentationTime(int64_t monotonic_clock_ns) {
 }
 
-void MetalDriver::endFrame(uint32_t frameId) {
+void MetalDriver::endFrame(uint32_t frameId, backend::EndFrameCallback callback, void* user) {
     // If we haven't committed the command buffer (if the frame was canceled), do it now. There may
     // be commands in it (like fence signaling) that need to execute.
     submitPendingCommands(mContext);

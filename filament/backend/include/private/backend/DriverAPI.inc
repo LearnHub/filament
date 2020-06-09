@@ -141,7 +141,9 @@ DECL_DRIVER_API_N(setPresentationTime,
         int64_t, monotonic_clock_ns)
 
 DECL_DRIVER_API_N(endFrame,
-        uint32_t, frameId)
+        uint32_t, frameId,
+        backend::EndFrameCallback, callback,
+        void*, user)
 
 // hint to the driver that we're done with all render targets up to this point. i.e. the driver
 // can start rendering. e.g. correspond to glFlush() for a GLES driver.

@@ -108,3 +108,41 @@ void JniImageCallback::invoke(void*, void* user) {
     JniImageCallback* data = reinterpret_cast<JniImageCallback*>(user);
     delete data;
 }
+
+// -----------------------------------------------------------------------------------------------
+
+JniFrameCallback* JniFrameCallback::make(JNIEnv* env, jobject handler, jobject callback) {
+    return new JniFrameCallback(env, handler, callback);
+}
+
+JniFrameCallback::JniFrameCallback(JNIEnv* env, jobject handler, jobject callback)
+        : mEnv(env)
+        , mHandler(env->NewGlobalRef(handler))
+        , mCallback(env->NewGlobalRef(callback)) {
+    initCallbackJni(env, mCallbackUtils);
+}
+
+JniFrameCallback::~JniFrameCallback() {
+    if (mHandler && mCallback) {
+#ifdef ANDROID
+        if (mEnv->IsInstanceOf(mHandler, mCallbackUtils.handlerClass)) {
+            mEnv->CallBooleanMethod(mHandler, mCallbackUtils.post, mCallback);
+        }
+#endif
+        if (mEnv->IsInstanceOf(mHandler, mCallbackUtils.executorClass)) {
+            mEnv->CallVoidMethod(mHandler, mCallbackUtils.execute, mCallback);
+        }
+    }
+    mEnv->DeleteGlobalRef(mHandler);
+    mEnv->DeleteGlobalRef(mCallback);
+#ifdef ANDROID
+    mEnv->DeleteGlobalRef(mCallbackUtils.handlerClass);
+#endif
+    mEnv->DeleteGlobalRef(mCallbackUtils.executorClass);
+}
+
+void JniFrameCallback::invoke(void* user) {
+    JniFrameCallback* data = reinterpret_cast<JniFrameCallback*>(user);
+    delete data;
+}
+

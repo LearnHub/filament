@@ -2762,10 +2762,17 @@ void OpenGLDriver::setPresentationTime(int64_t monotonic_clock_ns) {
     mPlatform.setPresentationTime(monotonic_clock_ns);
 }
 
-void OpenGLDriver::endFrame(uint32_t frameId) {
+void OpenGLDriver::endFrame(uint32_t frameId, backend::EndFrameCallback callback, void* user) {
     //SYSTRACE_NAME("glFinish");
     //glFinish();
     insertEventMarker("endFrame");
+    if(callback != nullptr) {
+        glFinish();
+        FrameCallback frameCallback;
+        frameCallback.callback = callback;
+        frameCallback.user = user;
+        scheduleCallback(std::move(frameCallback));
+    }
 }
 
 void OpenGLDriver::flush(int) {

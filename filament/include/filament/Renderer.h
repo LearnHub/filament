@@ -459,7 +459,7 @@ public:
      * @see
      * beginFrame()
      */
-    void endFrame();
+    void endFrame(backend::EndFrameCallback callback = nullptr, void* user = nullptr);
 
     /**
      * Returns the time in second of the last call to beginFrame(). This value is constant for all
