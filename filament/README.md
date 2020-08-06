@@ -12,7 +12,6 @@ Filament. Latest versions are available on the [project page](https://github.com
 - `mipgen`, Generates a series of miplevels from a source image.
 - `normal-blending`, Tool to blend normal maps
 - `roughness-prefilter`, Pre-filters a roughness map from a normal map to reduce aliasing
-- `skygen`, Physically-based sky environment texture generator
 - `specular-color`, Computes the specular color of conductors based on spectral data
 
 You can refer to the individual documentation files in `docs/` for more information.
@@ -134,8 +133,8 @@ When building Filament from source, the `USE_STATIC_CRT` CMake option can be
 used to change the run-time library version.
 
 ```
-FILAMENT_LIBS=filament.lib backend.lib bluegl.lib filabridge.lib filaflat.lib utils.lib \
-              geometry.lib smol-v.lib ibl.lib
+FILAMENT_LIBS=filament.lib backend.lib bluegl.lib bluevk.lib filabridge.lib filaflat.lib \
+              utils.lib geometry.lib smol-v.lib ibl.lib
 CC=cl.exe
 
 main.exe: main.obj

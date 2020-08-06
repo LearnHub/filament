@@ -4,6 +4,10 @@ project(matdbg C ASM)
 set(TARGET matdbg)
 set(PUBLIC_HDR_DIR include)
 
+if (CMAKE_CROSSCOMPILING)
+    include(${IMPORT_EXECUTABLES})
+endif()
+
 # ==================================================================================================
 # Sources and headers
 # ==================================================================================================
@@ -82,8 +86,6 @@ target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
 # ==================================================================================================
 # Compiler flags
 # ==================================================================================================
-
-target_compile_options(${TARGET} PRIVATE $<$<PLATFORM_ID:Linux>:-fPIC>)
 
 if (MSVC)
     target_compile_options(${TARGET} PRIVATE $<$<CONFIG:Release>:/fp:fast>)

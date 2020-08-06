@@ -37,7 +37,6 @@ namespace filament {
 
 using namespace backend;
 using namespace fg;
-using namespace details;
 
 // ------------------------------------------------------------------------------------------------
 
@@ -436,14 +435,6 @@ void FrameGraph::execute(FEngine& engine, DriverApi& driver) noexcept {
         if (node.refCount) {
             driver.pushGroupMarker(node.name);
             executeInternal(node, driver);
-            if (&node != &passNodes.back()) {
-                // wake-up the driver thread and consume data in the command queue, this helps with
-                // latency, parallelism and memory pressure in the command queue.
-                // As an optimization, we don't do this on the last execute() because
-                // 1) we're adding a driver flush command (below) and
-                // 2) an engine.flush() is always performed by Renderer at the end of a renderJob.
-                engine.flush();
-            }
             driver.popGroupMarker();
         }
     }
@@ -464,9 +455,10 @@ void FrameGraph::execute(DriverApi& driver) noexcept {
     reset();
 }
 
-void FrameGraph::export_graphviz(utils::io::ostream& out) {
+void FrameGraph::export_graphviz(utils::io::ostream& out, const char* viewName) {
 #ifndef NDEBUG
-    out << "digraph framegraph {\n";
+    const char* label = viewName ? viewName : "anonymousView";
+    out << "digraph \"" << label << "\" {\n";
     out << "rankdir = LR\n";
     out << "bgcolor = black\n";
     out << "node [shape=rectangle, fontname=\"helvetica\", fontsize=10]\n\n";

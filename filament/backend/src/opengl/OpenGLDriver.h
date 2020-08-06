@@ -52,6 +52,13 @@ class OpenGLDriver final : public backend::DriverBase {
 public:
     static backend::Driver* create(backend::OpenGLPlatform* platform, void* sharedGLContext) noexcept;
 
+    class DebugMarker {
+        OpenGLDriver& driver;
+    public:
+        DebugMarker(OpenGLDriver& driver, const char* string) noexcept;
+        ~DebugMarker() noexcept;
+    };
+
     // OpenGLDriver specific fields
     struct GLBuffer {
         GLuint id = 0;
@@ -114,13 +121,6 @@ public:
         } gl;
 
         void* platformPImpl = nullptr;
-    };
-
-    class DebugMarker {
-        OpenGLDriver& driver;
-    public:
-        DebugMarker(OpenGLDriver& driver, const char* string) noexcept;
-        ~DebugMarker() noexcept;
     };
 
     struct GLTimerQuery : public backend::HwTimerQuery {
@@ -194,20 +194,19 @@ public:
         backend::TargetBufferFlags targets = {};
     };
 
-struct GLSync : public backend::HwSync {
-    using HwSync::HwSync;
-    struct State {
-        std::atomic<GLenum> status{ GL_TIMEOUT_EXPIRED };
+    struct GLSync : public backend::HwSync {
+        using HwSync::HwSync;
+        struct State {
+            std::atomic<GLenum> status{ GL_TIMEOUT_EXPIRED };
+        };
+        struct {
+            GLsync sync;
+        } gl;
+        std::shared_ptr<State> result{ std::make_shared<GLSync::State>() };
     };
-    struct {
-        GLsync sync;
-    } gl;
-    std::shared_ptr<State> result{ std::make_shared<GLSync::State>() };
-};
 
     OpenGLDriver(OpenGLDriver const&) = delete;
     OpenGLDriver& operator=(OpenGLDriver const&) = delete;
-
 
 private:
     OpenGLContext mContext;
@@ -287,8 +286,12 @@ private:
             std::is_pointer<Dp>::value &&
             std::is_base_of<B, typename std::remove_pointer<Dp>::type>::value, Dp>::type
     handle_cast(backend::Handle<B>& handle) noexcept {
+        assert(handle);
+        if (!handle) return nullptr; // better to get a NPE than random behavior/corruption
         char* const base = (char *)mHandleArena.getArea().begin();
         size_t offset = handle.getId() << HandleAllocator::MIN_ALIGNMENT_SHIFT;
+        // assert that this handle is even a valid one
+        assert(base + offset + sizeof(typename std::remove_pointer<Dp>::type) <= (char *)mHandleArena.getArea().end());
         return static_cast<Dp>(static_cast<void *>(base + offset));
     }
 
@@ -316,6 +319,8 @@ private:
 
     void setRasterStateSlow(backend::RasterState rs) noexcept;
     void setRasterState(backend::RasterState rs) noexcept {
+        mRenderPassColorWrite |= rs.colorWrite;
+        mRenderPassDepthWrite |= rs.depthWrite;
         if (UTILS_UNLIKELY(rs != mRasterState)) {
             setRasterStateSlow(rs);
         }
@@ -374,6 +379,8 @@ private:
     // state required to represent the current render pass
     backend::Handle<backend::HwRenderTarget> mRenderPassTarget;
     backend::RenderPassParams mRenderPassParams;
+    GLboolean mRenderPassColorWrite{};
+    GLboolean mRenderPassDepthWrite{};
 
     void clearWithRasterPipe(backend::TargetBufferFlags clearFlags,
             math::float4 const& linearColor, GLfloat depth, GLint stencil) noexcept;

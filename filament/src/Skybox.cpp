@@ -39,8 +39,6 @@
 using namespace filament::math;
 namespace filament {
 
-using namespace details;
-
 struct Skybox::BuilderDetails {
     Texture* mEnvironmentMap = nullptr;
     float4 mColor{0, 0, 0, 1};
@@ -90,15 +88,13 @@ Skybox* Skybox::Builder::build(Engine& engine) {
 
 // ------------------------------------------------------------------------------------------------
 
-namespace details {
-
 FSkybox::FSkybox(FEngine& engine, const Builder& builder) noexcept
         : mSkyboxTexture(upcast(builder->mEnvironmentMap)),
           mRenderableManager(engine.getRenderableManager()),
           mIntensity(builder->mIntensity) {
 
     FMaterial const* material = engine.getSkyboxMaterial();
-    mSkyboxMaterialInstance = material->createInstance();
+    mSkyboxMaterialInstance = material->createInstance("Skybox");
 
     TextureSampler sampler(TextureSampler::MagFilter::LINEAR, TextureSampler::WrapMode::REPEAT);
     auto pInstance = static_cast<MaterialInstance*>(mSkyboxMaterialInstance);
@@ -155,13 +151,9 @@ void FSkybox::commit(backend::DriverApi& driver) noexcept {
     mSkyboxMaterialInstance->commit(driver);
 }
 
-} // namespace details
-
 // ------------------------------------------------------------------------------------------------
 // Trampoline calling into private implementation
 // ------------------------------------------------------------------------------------------------
-
-using namespace details;
 
 void Skybox::setLayerMask(uint8_t select, uint8_t values) noexcept {
     upcast(this)->setLayerMask(select, values);

@@ -31,7 +31,7 @@ NoopDriver::NoopDriver() noexcept : DriverBase(new ConcreteDispatcher<NoopDriver
 NoopDriver::~NoopDriver() noexcept = default;
 
 backend::ShaderModel NoopDriver::getShaderModel() const noexcept {
-#if defined(ANDROID) || defined(IOS)
+#if defined(ANDROID) || defined(IOS) || defined(__EMSCRIPTEN__)
     return ShaderModel::GL_ES_30;
 #else
     return ShaderModel::GL_CORE_41;
@@ -143,6 +143,10 @@ bool NoopDriver::isRenderTargetFormatSupported(TextureFormat format) {
     return true;
 }
 
+bool NoopDriver::isFrameBufferFetchSupported() {
+    return false;
+}
+
 bool NoopDriver::isFrameTimeSupported() {
     return true;
 }
@@ -159,6 +163,13 @@ void NoopDriver::updateIndexBuffer(Handle<HwIndexBuffer> ibh, BufferDescriptor&&
 
 void NoopDriver::update2DImage(Handle<HwTexture> th,
         uint32_t level, uint32_t xoffset, uint32_t yoffset, uint32_t width, uint32_t height,
+        PixelBufferDescriptor&& data) {
+    scheduleDestroy(std::move(data));
+}
+
+void NoopDriver::update3DImage(Handle<HwTexture> th,
+        uint32_t level, uint32_t xoffset, uint32_t yoffset, uint32_t zoffset,
+        uint32_t width, uint32_t height, uint32_t depth,
         PixelBufferDescriptor&& data) {
     scheduleDestroy(std::move(data));
 }
@@ -209,6 +220,9 @@ void NoopDriver::beginRenderPass(Handle<HwRenderTarget> rth, const RenderPassPar
 }
 
 void NoopDriver::endRenderPass(int) {
+}
+
+void NoopDriver::nextSubpass(int) {
 }
 
 void NoopDriver::setRenderPrimitiveBuffer(Handle<HwRenderPrimitive> rph,

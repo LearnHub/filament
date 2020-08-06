@@ -14,6 +14,7 @@ set(PUBLIC_HDRS
         include/gltfio/ResourceLoader.h
         include/gltfio/SimpleViewer.h
         include/gltfio/FilamentAsset.h
+        include/gltfio/FilamentInstance.h
 )
 
 set(SRCS
@@ -25,6 +26,8 @@ set(SRCS
         src/DracoCache.cpp
         src/FFilamentAsset.h
         src/FilamentAsset.cpp
+        src/FFilamentInstance.h
+        src/FilamentInstance.cpp
         src/GltfEnums.h
         src/MaterialProvider.cpp
         src/ResourceLoader.cpp
@@ -46,23 +49,24 @@ if (CMAKE_CROSSCOMPILING)
     include(${IMPORT_EXECUTABLES})
 endif()
 
-function(generate_mat SHADINGMODEL BLENDING)
+function(generate_mat TEMPLATE SHADINGMODEL BLENDING)
     set(DOUBLESIDED false)
     set(GENERATED_MAT "${RESOURCE_DIR}/${SHADINGMODEL}_${BLENDING}.mat")
-    configure_file(materials/ubershader.mat.in ${GENERATED_MAT})
+    configure_file(materials/${TEMPLATE}.mat.in ${GENERATED_MAT})
     set(MATERIAL_SRCS ${MATERIAL_SRCS} ${GENERATED_MAT} PARENT_SCOPE)
 endfunction()
 
 set(MATERIAL_SRCS)
-generate_mat(lit fade)
-generate_mat(lit opaque)
-generate_mat(lit masked)
-generate_mat(specularGlossiness fade)
-generate_mat(specularGlossiness opaque)
-generate_mat(specularGlossiness masked)
-generate_mat(unlit fade)
-generate_mat(unlit opaque)
-generate_mat(unlit masked)
+generate_mat(ubershader lit fade)
+generate_mat(ubershader lit opaque)
+generate_mat(ubershader lit masked)
+generate_mat(ubershader specularGlossiness fade)
+generate_mat(ubershader specularGlossiness opaque)
+generate_mat(ubershader specularGlossiness masked)
+generate_mat(ubershader unlit fade)
+generate_mat(ubershader unlit opaque)
+generate_mat(ubershader unlit masked)
+generate_mat(transmission lit transparent)
 
 set(RESOURCE_BINS)
 foreach (input_path ${MATERIAL_SRCS})
@@ -155,12 +159,11 @@ add_library(gltfio_resources_lite ${DUMMY_SRC} ${RESGEN_SOURCE})
 # ==================================================================================================
 
 include_directories(${PUBLIC_HDR_DIR} ${RESOURCE_DIR})
-link_libraries(math utils filament cgltf stb geometry gltfio_resources)
+link_libraries(math utils filament cgltf stb geometry gltfio_resources tsl trie)
 
 add_library(gltfio_core STATIC ${PUBLIC_HDRS} ${SRCS})
 
 target_include_directories(gltfio_core PUBLIC ${PUBLIC_HDR_DIR})
-target_compile_options(gltfio_core PRIVATE $<$<PLATFORM_ID:Linux>:-fPIC>)
 
 target_compile_definitions(gltfio_core PUBLIC -DGLTFIO_DRACO_SUPPORTED=1)
 target_link_libraries(gltfio_core PUBLIC dracodec)
@@ -183,7 +186,6 @@ if (NOT WEBGL AND NOT ANDROID AND NOT IOS)
         target_compile_options(${TARGET} PRIVATE $<$<CONFIG:Release>:-ffast-math>)
         target_compile_options(${TARGET} PRIVATE -Wno-deprecated-register)
     endif()
-    target_compile_options(${TARGET} PRIVATE $<$<PLATFORM_ID:Linux>:-fPIC>)
 
     # ==================================================================================================
     # Installation

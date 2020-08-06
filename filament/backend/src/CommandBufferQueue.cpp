@@ -20,6 +20,7 @@
 
 #include <utils/Log.h>
 #include <utils/Systrace.h>
+#include <utils/Panic.h>
 
 #include "private/backend/CommandStream.h"
 
@@ -41,9 +42,17 @@ CommandBufferQueue::~CommandBufferQueue() {
 
 void CommandBufferQueue::requestExit() {
     std::unique_lock<utils::Mutex> lock(mLock);
-    mExitRequested = true;
+    mExitRequested = EXIT_REQUESTED;
     mCondition.notify_one();
 }
+
+bool CommandBufferQueue::isExitRequested() const {
+    std::unique_lock<utils::Mutex> lock(mLock);
+    ASSERT_PRECONDITION( mExitRequested == 0 || mExitRequested == EXIT_REQUESTED,
+            "mExitRequested is corrupted (value = 0x%08x)!", mExitRequested);
+    return (bool)mExitRequested;
+}
+
 
 void CommandBufferQueue::flush() noexcept {
     SYSTRACE_CALL();
@@ -110,6 +119,10 @@ std::vector<CommandBufferQueue::Slice> CommandBufferQueue::waitForCommands() con
     while (mCommandBuffersToExecute.empty() && !mExitRequested) {
         mCondition.wait(lock);
     }
+
+    ASSERT_PRECONDITION( mExitRequested == 0 || mExitRequested == EXIT_REQUESTED,
+            "mExitRequested is corrupted (value = 0x%08x)!", mExitRequested);
+
     return std::move(mCommandBuffersToExecute);
 }
 

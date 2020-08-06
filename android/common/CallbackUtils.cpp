@@ -116,9 +116,9 @@ JniFrameCallback* JniFrameCallback::make(JNIEnv* env, jobject handler, jobject c
 }
 
 JniFrameCallback::JniFrameCallback(JNIEnv* env, jobject handler, jobject callback)
-        : mEnv(env)
-        , mHandler(env->NewGlobalRef(handler))
-        , mCallback(env->NewGlobalRef(callback)) {
+: mEnv(env)
+, mHandler(env->NewGlobalRef(handler))
+, mCallback(env->NewGlobalRef(callback)) {
     initCallbackJni(env, mCallbackUtils);
 }
 
@@ -145,4 +145,3 @@ void JniFrameCallback::invoke(void* user) {
     JniFrameCallback* data = reinterpret_cast<JniFrameCallback*>(user);
     delete data;
 }
-

@@ -22,7 +22,6 @@ using namespace utils;
 using namespace filament::math;
 
 namespace filament {
-namespace details {
 
 FTransformManager::FTransformManager() noexcept = default;
 
@@ -200,6 +199,7 @@ void FTransformManager::insertNode(Instance i, Instance parent) noexcept {
 
     manager[i].parent = parent;
     manager[i].prev = 0;
+    manager[i].next = 0;
     if (parent) {
         // we insert ourselves first in the parent's list
         Instance next = manager[parent].firstChild;
@@ -378,10 +378,6 @@ void FTransformManager::gc(utils::EntityManager& em) noexcept {
                 destroy(e);
             });
 }
-
-} // namespace details
-
-using namespace details;
 
 TransformManager::children_iterator& TransformManager::children_iterator::operator++() {
     FTransformManager const& that = upcast(mManager);

@@ -31,7 +31,6 @@
 #include <math/vec4.h>
 
 namespace filament {
-namespace details {
 
 class FView;
 class RenderPass;
@@ -58,11 +57,33 @@ public:
         size_t shadowDimension = 0;
     };
 
+    struct CascadeParameters {
+        // The near and far planes, in clip space, to use for this shadow map
+        math::float2 csNearFar = { -1.0f, 1.0f };
+
+        // The following fields are set by computeSceneCascadeParams.
+
+        // Light-space near/far planes for the scene.
+        math::float2 lsNearFar;
+
+        // View-space near/far planes for the scene.
+        math::float2 vsNearFar;
+
+        Aabb wsShadowCastersVolume;
+        Aabb wsShadowReceiversVolume;
+    };
+
+    // Call once per frame to populate the CascadeParameters struct, then pass to update().
+    // This computes values constant across all cascades.
+    static void computeSceneCascadeParams(const FScene::LightSoa& lightData, size_t index,
+            FScene const* scene, filament::CameraInfo const& camera, uint8_t visibleLayers,
+            CascadeParameters& cascadeParams);
+
     // Call once per frame if the light, scene (or visible layers) or camera changes.
     // This computes the light's camera.
     void update(const FScene::LightSoa& lightData, size_t index, FScene const* scene,
-            details::CameraInfo const& camera, uint8_t visibleLayers,
-            ShadowMapLayout layout) noexcept;
+            filament::CameraInfo const& camera, uint8_t visibleLayers,
+            ShadowMapLayout layout, const CascadeParameters& cascadeParams) noexcept;
 
     void render(backend::DriverApi& driver, backend::Handle<backend::HwRenderTarget> rt,
             filament::Viewport const& viewport, utils::Range<uint32_t> const& range,
@@ -115,7 +136,7 @@ private:
     void computeShadowCameraDirectional(
             math::float3 const& direction, FScene const* scene,
             CameraInfo const& camera, FLightManager::ShadowParams const& params,
-            uint8_t visibleLayers) noexcept;
+            uint8_t visibleLayers, CascadeParameters cascadeParams) noexcept;
     void computeShadowCameraSpot(math::float3 const& position, math::float3 const& dir,
             float outerConeAngle, float radius, CameraInfo const& camera,
             FLightManager::ShadowParams const& params) noexcept;
@@ -130,7 +151,7 @@ private:
             math::mat4f const& Mv, math::float3 worldOrigin, math::float2 shadowMapResolution) noexcept;
 
     static inline void computeFrustumCorners(math::float3* out,
-            const math::mat4f& projectionViewInverse) noexcept;
+            const math::mat4f& projectionViewInverse, math::float2 csNearFar = { -1.0f, 1.0f }) noexcept;
 
     static inline math::float2 computeNearFar(math::mat4f const& view,
             Aabb const& wsShadowCastersVolume) noexcept;
@@ -167,12 +188,10 @@ private:
             math::float3 t0, math::float3 t1, math::float3 t2) noexcept;
 
     static size_t intersectFrustum(math::float3* out, size_t vertexCount,
-            math::float3 const* segmentsVertices, math::float3 const* quadsVertices,
-            Frustum const& frustum) noexcept;
+            math::float3 const* segmentsVertices, math::float3 const* quadsVertices) noexcept;
 
     static size_t intersectFrustumWithBox(
             FrustumBoxIntersection& outVertices,
-            const Frustum& frustum,
             const math::float3* wsFrustumCorners,
             Aabb const& wsBox);
 
@@ -218,7 +237,6 @@ private:
     const bool mTextureSpaceFlipped;
 };
 
-} // namespace details
 } // namespace filament
 
 #endif // TNT_FILAMENT_DETAILS_SHADOWMAP_H

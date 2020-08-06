@@ -124,6 +124,7 @@ public:
         bool EXT_texture_sRGB = false;
         bool EXT_texture_compression_s3tc_srgb = false;
         bool EXT_disjoint_timer_query = false;
+        bool EXT_shader_framebuffer_fetch = false;
     } ext;
 
     struct {
@@ -198,7 +199,7 @@ private:
         struct PolygonOffset {
             GLfloat factor = 0;
             GLfloat units = 0;
-            bool operator != (PolygonOffset const& rhs) noexcept {
+            bool operator != (PolygonOffset const& rhs) const noexcept {
                 return factor != rhs.factor || units != rhs.units;
             }
         } polygonOffset;
@@ -224,7 +225,7 @@ private:
                 GLuint sampler = 0;
                 struct {
                     GLuint texture_id = 0;
-                } targets[5];
+                } targets[6];  // this must match getIndexForTextureTarget()
             } units[MAX_TEXTURE_UNIT_COUNT];
         } textures;
 
@@ -270,12 +271,14 @@ private:
 // ------------------------------------------------------------------------------------------------
 
 constexpr size_t OpenGLContext::getIndexForTextureTarget(GLuint target) noexcept {
+    // this must match state.textures[].targets[]
     switch (target) {
         case GL_TEXTURE_2D:             return 0;
         case GL_TEXTURE_2D_ARRAY:       return 1;
         case GL_TEXTURE_CUBE_MAP:       return 2;
         case GL_TEXTURE_2D_MULTISAMPLE: return 3;
         case GL_TEXTURE_EXTERNAL_OES:   return 4;
+        case GL_TEXTURE_3D:             return 5;
         default:                        return 0;
     }
 }
@@ -373,7 +376,7 @@ void OpenGLContext::bindVertexArray(RenderPrimitive const* p) noexcept {
 void OpenGLContext::bindBufferRange(GLenum target, GLuint index, GLuint buffer,
         GLintptr offset, GLsizeiptr size) noexcept {
     size_t targetIndex = getIndexForBufferTarget(target);
-    assert(targetIndex <= 1); // sanity check
+    assert(targetIndex <= 1); // validity check
 
     // this ALSO sets the generic binding
     if (   state.buffers.targets[targetIndex].buffers[index].name != buffer

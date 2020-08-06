@@ -26,7 +26,6 @@
 #include <utils/compiler.h>
 
 namespace filament {
-namespace details {
 
 class FEngine;
 class FStream;
@@ -104,6 +103,9 @@ public:
         return std::max(1, std::ilogbf(std::max(width, height)) + 1);
     }
 
+    static bool validatePixelFormatAndType(backend::TextureFormat internalFormat,
+            backend::PixelDataFormat format, backend::PixelDataType type) noexcept;
+
 private:
     friend class Texture;
     FStream* mStream = nullptr;
@@ -121,7 +123,6 @@ private:
 
 FILAMENT_UPCAST(Texture)
 
-} // namespace details
 } // namespace filament
 
 #endif // TNT_FILAMENT_DETAILS_TEXTURE_H

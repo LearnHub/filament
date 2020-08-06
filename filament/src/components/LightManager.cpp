@@ -30,8 +30,6 @@ using namespace utils;
 
 namespace filament {
 
-using namespace details;
-
 // ------------------------------------------------------------------------------------------------
 
 struct LightManager::BuilderDetails {
@@ -143,8 +141,6 @@ LightManager::Builder::Result LightManager::Builder::build(Engine& engine, Entit
 
 // ------------------------------------------------------------------------------------------------
 
-namespace details {
-
 FLightManager::FLightManager(FEngine& engine) noexcept : mEngine(engine) {
     // DON'T use engine here in the ctor, because it's not fully constructed yet.
 }
@@ -177,6 +173,7 @@ void FLightManager::create(const FLightManager::Builder& builder, utils::Entity 
 
         ShadowParams& shadowParams = manager[i].shadowParams;
         shadowParams.options.mapSize = clamp(builder->mShadowOptions.mapSize, 0u, 2048u);
+        shadowParams.options.shadowCascades = clamp<uint8_t>(builder->mShadowOptions.shadowCascades, 1, CONFIG_MAX_SHADOW_CASCADES);
         shadowParams.options.constantBias = clamp(builder->mShadowOptions.constantBias, 0.0f, 2.0f);
         shadowParams.options.normalBias = clamp(builder->mShadowOptions.normalBias, 0.0f, 3.0f);
         shadowParams.options.shadowFar = std::max(builder->mShadowOptions.shadowFar, 0.0f);
@@ -373,14 +370,45 @@ void FLightManager::setShadowCaster(Instance i, bool shadowCaster) noexcept {
     }
 }
 
+// ------------------------------------------------------------------------------------------------
+// ShadowCascades utility methods
+// ------------------------------------------------------------------------------------------------
 
-} // namespace details
+void LightManager::ShadowCascades::computeUniformSplits(float splitPositions[3], uint8_t cascades) {
+    size_t s = 0;
+    cascades = max(cascades, (uint8_t) 4u);
+    for (size_t c = 1; c < cascades; c++) {
+        splitPositions[s++] = (float) c / cascades;
+    }
+}
+
+void LightManager::ShadowCascades::computeLogSplits(float splitPositions[3], uint8_t cascades,
+        float near, float far) {
+    size_t s = 0;
+    cascades = max(cascades, (uint8_t) 4u);
+    for (size_t c = 1; c < cascades; c++) {
+        splitPositions[s++] =
+            (near * std::powf(far / near, (float) c / cascades) - near) / (far - near);
+    }
+}
+
+void LightManager::ShadowCascades::computePracticalSplits(float splitPositions[3], uint8_t cascades,
+        float near, float far, float lambda) {
+    float uniformSplits[3];
+    float logSplits[3];
+    cascades = max(cascades, (uint8_t) 4u);
+    computeUniformSplits(uniformSplits, cascades);
+    computeLogSplits(logSplits, cascades, near, far);
+    size_t s = 0;
+    for (size_t c = 1; c < cascades; c++) {
+        splitPositions[s] = lambda * logSplits[s] + (1.0f - lambda) * uniformSplits[s];
+        s++;
+    }
+}
 
 // ------------------------------------------------------------------------------------------------
 // Trampoline calling into private implementation
 // ------------------------------------------------------------------------------------------------
-
-using namespace details;
 
 size_t LightManager::getComponentCount() const noexcept {
     return upcast(this)->getComponentCount();

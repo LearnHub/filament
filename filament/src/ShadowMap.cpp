@@ -36,8 +36,6 @@ using namespace utils;
 namespace filament {
 using namespace backend;
 
-namespace details {
-
 // do this only if depth-clamp is available
 static constexpr bool USE_DEPTH_CLAMP = false;
 
@@ -47,8 +45,10 @@ ShadowMap::ShadowMap(FEngine& engine) noexcept :
         mEngine(engine),
         mClipSpaceFlipped(engine.getBackend() == Backend::VULKAN),
         mTextureSpaceFlipped(engine.getBackend() == Backend::METAL) {
-    mCamera = mEngine.createCamera(engine.getEntityManager().create());
-    mDebugCamera = mEngine.createCamera(engine.getEntityManager().create());
+    Entity entities[2];
+    engine.getEntityManager().create(2, entities);
+    mCamera = mEngine.createCamera(entities[0]);
+    mDebugCamera = mEngine.createCamera((entities[1]));
     FDebugRegistry& debugRegistry = engine.getDebugRegistry();
     debugRegistry.registerProperty("d.shadowmap.focus_shadowcasters", &engine.debug.shadowmap.focus_shadowcasters);
     debugRegistry.registerProperty("d.shadowmap.far_uses_shadowcasters", &engine.debug.shadowmap.far_uses_shadowcasters);
@@ -61,8 +61,12 @@ ShadowMap::ShadowMap(FEngine& engine) noexcept :
 }
 
 ShadowMap::~ShadowMap() {
-    mEngine.destroy(mCamera->getEntity());
-    mEngine.destroy(mDebugCamera->getEntity());
+    FEngine& engine = mEngine;
+    Entity entities[] = { mCamera->getEntity(), mDebugCamera->getEntity() };
+    for (Entity e : entities) {
+        engine.destroyCameraComponent(e);
+    }
+    engine.getEntityManager().destroy(sizeof(entities) / sizeof(Entity), entities);
 }
 
 void ShadowMap::render(DriverApi& driver, Handle<HwRenderTarget> rt,
@@ -80,7 +84,7 @@ void ShadowMap::render(DriverApi& driver, Handle<HwRenderTarget> rt,
     params.viewport = viewport;
 
     FCamera const& camera = getCamera();
-    details::CameraInfo cameraInfo(camera);
+    filament::CameraInfo cameraInfo(camera);
 
     pass.setCamera(cameraInfo);
     pass.setGeometry(scene.getRenderableData(), range, scene.getRenderableUBO());
@@ -97,8 +101,46 @@ void ShadowMap::render(DriverApi& driver, Handle<HwRenderTarget> rt,
     pass.execute("Shadow map Pass", rt, params);
 }
 
+void ShadowMap::computeSceneCascadeParams(const FScene::LightSoa& lightData, size_t index,
+        FScene const* scene, filament::CameraInfo const& camera, uint8_t visibleLayers,
+        CascadeParameters& cascadeParams) {
+    // Compute the light's model matrix.
+    const float3 lightPosition = camera.getPosition();
+    const float3 dir = lightData.elementAt<FScene::DIRECTION>(index);
+    const mat4f M = mat4f::lookAt(lightPosition, lightPosition + dir, float3{ 0, 1, 0 });
+    const mat4f Mv = FCamera::rigidTransformInverse(M);
+    const mat4f V = camera.view;
+
+    // Compute scene bounds in world space, as well as the light-space and view-space near/far planes
+    cascadeParams.lsNearFar = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::max() };
+    cascadeParams.vsNearFar = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::max() };
+    cascadeParams.wsShadowCastersVolume = {};
+    cascadeParams.wsShadowReceiversVolume = {};
+    visitScene(*scene, visibleLayers,
+            [&](Aabb caster) {
+                cascadeParams.wsShadowCastersVolume.min =
+                        min(cascadeParams.wsShadowCastersVolume.min, caster.min);
+                cascadeParams.wsShadowCastersVolume.max =
+                        max(cascadeParams.wsShadowCastersVolume.max, caster.max);
+                float2 nf = computeNearFar(Mv, caster);
+                cascadeParams.lsNearFar.x = std::max(cascadeParams.lsNearFar.x, nf.x);  // near
+                cascadeParams.lsNearFar.y = std::min(cascadeParams.lsNearFar.y, nf.y);  // far
+            },
+            [&](Aabb receiver) {
+                cascadeParams.wsShadowReceiversVolume.min =
+                        min(cascadeParams.wsShadowReceiversVolume.min, receiver.min);
+                cascadeParams.wsShadowReceiversVolume.max =
+                        max(cascadeParams.wsShadowReceiversVolume.max, receiver.max);
+                float2 nf = computeNearFar(V, receiver);
+                cascadeParams.vsNearFar.x = std::max(cascadeParams.vsNearFar.x, nf.x);
+                cascadeParams.vsNearFar.y = std::min(cascadeParams.vsNearFar.y, nf.y);
+            }
+    );
+}
+
 void ShadowMap::update(const FScene::LightSoa& lightData, size_t index, FScene const* scene,
-        details::CameraInfo const& camera, uint8_t visibleLayers, ShadowMapLayout layout) noexcept {
+        filament::CameraInfo const& camera, uint8_t visibleLayers, ShadowMapLayout layout,
+        const CascadeParameters& cascadeParams) noexcept {
     // this is the hard part here, find a good frustum for our camera
 
     auto& lcm = mEngine.getLightManager();
@@ -144,15 +186,13 @@ void ShadowMap::update(const FScene::LightSoa& lightData, size_t index, FScene c
     else            params.options.shadowNearHint = dzn * dz - camera.zn;
     if (dzf > 0)    dzf =-std::max(0.0f, camera.zf - params.options.shadowFarHint) / dz;
     else            params.options.shadowFarHint = dzf * dz + camera.zf;
-
-
     using Type = FLightManager::Type;
     switch (lcm.getType(li)) {
         case Type::SUN:
         case Type::DIRECTIONAL:
             computeShadowCameraDirectional(
                     lightData.elementAt<FScene::DIRECTION>(index), scene, cameraInfo, params,
-                    visibleLayers);
+                    visibleLayers, cascadeParams);
             break;
         case Type::FOCUSED_SPOT:
         case Type::SPOT:
@@ -168,7 +208,7 @@ void ShadowMap::update(const FScene::LightSoa& lightData, size_t index, FScene c
 void ShadowMap::computeShadowCameraDirectional(
         float3 const& dir, FScene const* scene, CameraInfo const& camera,
         FLightManager::ShadowParams const& params,
-        uint8_t visibleLayers) noexcept {
+        uint8_t visibleLayers, CascadeParameters cascadeParams) noexcept {
 
     /*
      * Compute the light's model matrix
@@ -183,23 +223,8 @@ void ShadowMap::computeShadowCameraDirectional(
     const mat4f M = mat4f::lookAt(lightPosition, lightPosition + dir, float3{ 0, 1, 0 });
     const mat4f Mv = FCamera::rigidTransformInverse(M);
 
-
-    // Compute scene bounds in world space, as well as the light-space near/far planes
-    float2 nearFar = { std::numeric_limits<float>::lowest(), std::numeric_limits<float>::max() };
-    Aabb wsShadowCastersVolume, wsShadowReceiversVolume;
-    visitScene(*scene, visibleLayers,
-            [&wsShadowCastersVolume, &Mv, &nearFar](Aabb caster) {
-                wsShadowCastersVolume.min = min(wsShadowCastersVolume.min, caster.min);
-                wsShadowCastersVolume.max = max(wsShadowCastersVolume.max, caster.max);
-                float2 nf = computeNearFar(Mv, caster);
-                nearFar.x = std::max(nearFar.x, nf.x);  // near
-                nearFar.y = std::min(nearFar.y, nf.y);  // far
-            },
-            [&wsShadowReceiversVolume](Aabb receiver) {
-                wsShadowReceiversVolume.min = min(wsShadowReceiversVolume.min, receiver.min);
-                wsShadowReceiversVolume.max = max(wsShadowReceiversVolume.max, receiver.max);
-            }
-    );
+    const Aabb& wsShadowCastersVolume = cascadeParams.wsShadowCastersVolume;
+    const Aabb& wsShadowReceiversVolume = cascadeParams.wsShadowReceiversVolume;
 
     if (wsShadowCastersVolume.isEmpty() || wsShadowReceiversVolume.isEmpty()) {
         mHasVisibleShadows = false;
@@ -209,12 +234,13 @@ void ShadowMap::computeShadowCameraDirectional(
     // view frustum vertices in world-space
     float3 wsViewFrustumVertices[8];
     computeFrustumCorners(wsViewFrustumVertices,
-            camera.model * FCamera::inverseProjection(camera.projection));
+            camera.model * FCamera::inverseProjection(camera.projection),
+            cascadeParams.csNearFar);
 
     // compute the intersection of the shadow receivers volume with the view volume
     // in world space. This returns a set of points on the convex-hull of the intersection.
     size_t vertexCount = intersectFrustumWithBox(mWsClippedShadowReceiverVolume,
-            camera.frustum, wsViewFrustumVertices, wsShadowReceiversVolume);
+            wsViewFrustumVertices, wsShadowReceiversVolume);
 
     /*
      *  compute scene zmax (i.e. Near plane) and zmin (i.e. Far plane) in light space.
@@ -233,7 +259,7 @@ void ShadowMap::computeShadowCameraDirectional(
     Aabb lsLightFrustumBounds;
     if (!USE_DEPTH_CLAMP) {
         // near plane from shadow caster volume
-        lsLightFrustumBounds.max.z = nearFar[0];
+        lsLightFrustumBounds.max.z = cascadeParams.lsNearFar[0];
     }
     for (size_t i = 0; i < vertexCount; ++i) {
         // far: figure out farthest shadow receivers
@@ -246,7 +272,7 @@ void ShadowMap::computeShadowCameraDirectional(
     }
     if (mEngine.debug.shadowmap.far_uses_shadowcasters) {
         // far: closest of the farthest shadow casters and receivers
-        lsLightFrustumBounds.min.z = std::max(lsLightFrustumBounds.min.z, nearFar[1]);
+        lsLightFrustumBounds.min.z = std::max(lsLightFrustumBounds.min.z, cascadeParams.lsNearFar[1]);
     }
 
     // near / far planes are specified relative to the direction the eye is looking at
@@ -694,7 +720,7 @@ void ShadowMap::intersectWithShadowCasters(Aabb& UTILS_RESTRICT lightFrustum,
     // transforming vertices that are "outside" the frustum, and that's forbidden.
     FrustumBoxIntersection wsClippedShadowCasterVolumeVertices;
     size_t vertexCount = intersectFrustumWithBox(wsClippedShadowCasterVolumeVertices,
-            Frustum(projection), wsLightFrustumCorners, wsShadowCastersVolume);
+            wsLightFrustumCorners, wsShadowCastersVolume);
 
     // compute shadow-caster bounds in light space
     Aabb box = compute2DBounds(lightView, wsClippedShadowCasterVolumeVertices.data(), vertexCount);
@@ -705,19 +731,21 @@ void ShadowMap::intersectWithShadowCasters(Aabb& UTILS_RESTRICT lightFrustum,
 }
 
 void ShadowMap::computeFrustumCorners(float3* UTILS_RESTRICT out,
-        const mat4f& UTILS_RESTRICT projectionViewInverse) noexcept {
+        const mat4f& UTILS_RESTRICT projectionViewInverse, float2 csNearFar) noexcept {
 
     // compute view frustum in world space (from its NDC)
     // matrix to convert: ndc -> camera -> world
-    constexpr float3 csViewFrustumCorners[8] = {
-            { -1, -1,  1 },
-            {  1, -1,  1 },
-            { -1,  1,  1 },
-            {  1,  1,  1 },
-            { -1, -1, -1 },
-            {  1, -1, -1 },
-            { -1,  1, -1 },
-            {  1,  1, -1 },
+    float near = csNearFar.x;
+    float far = csNearFar.y;
+    float3 csViewFrustumCorners[8] = {
+            { -1, -1,  far },
+            {  1, -1,  far },
+            { -1,  1,  far },
+            {  1,  1,  far },
+            { -1, -1,  near },
+            {  1, -1,  near },
+            { -1,  1,  near },
+            {  1,  1,  near },
     };
     for (float3 c : csViewFrustumCorners) {
         *out++ = mat4f::project(projectionViewInverse, c);
@@ -744,7 +772,7 @@ void ShadowMap::snapLightFrustum(float2& s, float2& o,
 
 size_t ShadowMap::intersectFrustumWithBox(
         FrustumBoxIntersection& UTILS_RESTRICT outVertices,
-        const Frustum& UTILS_RESTRICT frustum, const float3* UTILS_RESTRICT wsFrustumCorners,
+        const float3* UTILS_RESTRICT wsFrustumCorners,
         Aabb const& UTILS_RESTRICT wsBox)
 {
     size_t vertexCount = 0;
@@ -780,6 +808,7 @@ size_t ShadowMap::intersectFrustumWithBox(
 
     // at this point if we have 8 vertices, we can skip the rest
     if (vertexCount < 8) {
+        Frustum frustum(wsFrustumCorners);
         float4 const* wsFrustumPlanes = frustum.getNormalizedPlanes();
 
         // b) add the scene's vertices that are known to be inside the view frustum
@@ -830,11 +859,11 @@ size_t ShadowMap::intersectFrustumWithBox(
         if (someFrustumVerticesAreInTheBox || vertexCount < 8) {
             // c) intersect scene's volume edges with frustum planes
             vertexCount = intersectFrustum(outVertices.data(), vertexCount,
-                    wsSceneReceiversCorners.vertices, wsFrustumCorners, frustum);
+                    wsSceneReceiversCorners.vertices, wsFrustumCorners);
 
             // d) intersect frustum edges with the scene's volume planes
             vertexCount = intersectFrustum(outVertices.data(), vertexCount,
-                    wsFrustumCorners, wsSceneReceiversCorners.vertices, frustum);
+                    wsFrustumCorners, wsSceneReceiversCorners.vertices);
         }
     }
 
@@ -851,8 +880,7 @@ size_t ShadowMap::intersectFrustum(
         float3* UTILS_RESTRICT out,
         size_t vertexCount,
         float3 const* segmentsVertices,
-        float3 const* quadsVertices,
-        Frustum const& frustum) noexcept {
+        float3 const* quadsVertices) noexcept {
 
     #pragma nounroll
     for (const Segment segment : sBoxSegments) {
@@ -1023,5 +1051,4 @@ void ShadowMap::visitScene(const FScene& scene, uint32_t visibleLayers,
     }
 }
 
-} // namespace details
 } // namespace filament

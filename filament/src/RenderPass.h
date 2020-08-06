@@ -37,7 +37,6 @@ class JobSystem;
 }
 
 namespace filament {
-namespace details {
 
 class RenderPass {
 public:
@@ -242,6 +241,9 @@ public:
 
 
     RenderPass(FEngine& engine, utils::GrowingSlice<Command> commands) noexcept;
+    RenderPass(RenderPass const& rhs);
+    ~RenderPass() noexcept;
+
     void overridePolygonOffset(backend::PolygonOffset* polygonOffset) noexcept;
     void setGeometry(FScene::RenderableSoa const& soa, utils::Range<uint32_t> vr,
             backend::Handle<backend::HwUniformBuffer> uboHandle) noexcept;
@@ -280,6 +282,8 @@ public:
     void execute(const char* name,
             backend::Handle<backend::HwRenderTarget> renderTarget,
             backend::RenderPassParams params) const noexcept;
+
+    void executeCommands(const char* name) const noexcept;
 
     utils::GrowingSlice<Command>& getCommands() { return mCommands; }
     utils::Slice<Command> const& getCommands() const { return mCommands; }
@@ -352,7 +356,6 @@ private:
     size_t mCommandsHighWatermark = 0;
 };
 
-} // namespace details
 } // namespace filament
 
 #endif // TNT_UTILS_RENDERPASS_H

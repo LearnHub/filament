@@ -21,6 +21,7 @@
 #include <filament/Material.h>
 
 #include <gltfio/FilamentAsset.h>
+#include <gltfio/FilamentInstance.h>
 #include <gltfio/MaterialProvider.h>
 
 namespace utils {
@@ -54,6 +55,9 @@ struct AssetConfiguration {
     //! specified, AssetLoader will use the singleton EntityManager associated with the current
     //! process.
     utils::EntityManager* entities = nullptr;
+
+    //! Optional default node name for anonymous nodes
+    char* defaultNodeName = nullptr;
 };
 
 /**
@@ -107,6 +111,7 @@ struct AssetConfiguration {
  *      }
  * } while (!quit);
  *
+ * scene->removeEntities(asset->getEntities(), asset->getEntityCount());
  * loader->destroyAsset(asset);
  * materials->destroyMaterials();
  * delete materials;
@@ -148,6 +153,32 @@ public:
     FilamentAsset* createAssetFromBinary(const uint8_t* bytes, uint32_t nbytes);
 
     /**
+     * Consumes the contents of a glTF 2.0 file and produces a primary asset with one or more
+     * instances.
+     *
+     * The returned instances share their textures, material instances, and vertex buffers with the
+     * primary asset. However each instance has its own unique set of entities, transform components,
+     * and renderable components. Instances are automatically freed when the primary asset is freed.
+     *
+     * Light components are not instanced, they belong only to the primary asset.
+     *
+     * Clients must use ResourceLoader to load resources on the primary asset.
+     *
+     * The entity accessors and renderable stack in the returned FilamentAsset represent the union
+     * of all entities across all instances. Use the individual FilamentInstance objects to access
+     * each partition of entities.  Similarly, the Animator in the primary asset controls all
+     * instances. To animate instances individually, use FilamentInstance::getAnimator().
+     *
+     * @param bytes the contents of a glTF 2.0 file (JSON or GLB)
+     * @param numBytes the number of bytes in "bytes"
+     * @param instances destination pointer, to be populated by the requested number of instances
+     * @param numInstances requested number of instances
+     * @return the primary asset that has ownership over all instances
+     */
+    FilamentAsset* createInstancedAsset(const uint8_t* bytes, uint32_t numBytes,
+            FilamentInstance** instances, size_t numInstances);
+
+    /**
      * Takes a pointer to an opaque pipeline object and returns a bundle of Filament objects.
      *
      * This exists solely for interop with AssetPipeline, which is optional according to the build
@@ -160,7 +191,12 @@ public:
      */
     void enableDiagnostics(bool enable = true);
 
-    /** Destroys the given asset and all of its associated Filament objects. */
+    /**
+     * Destroys the given asset and all of its associated Filament objects.
+     *
+     * This destroys entities, components, material instances, vertex buffers, index buffers,
+     * and textures.
+     */
     void destroyAsset(const FilamentAsset* asset);
 
     /**

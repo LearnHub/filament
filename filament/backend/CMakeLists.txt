@@ -83,6 +83,8 @@ if (NOT FILAMENT_USE_EXTERNAL_GLES3)
         list(APPEND SRCS src/android/ExternalTextureManagerAndroid.cpp)
         list(APPEND SRCS src/android/VirtualMachineEnv.cpp)
         list(APPEND SRCS src/opengl/PlatformEGLAndroid.cpp)
+    elseif (FILAMENT_USE_SWIFTSHADER)
+        # no extra sources for SwiftShader, PlatformEGL is enough
     elseif (IOS)
         list(APPEND SRCS src/opengl/PlatformCocoaTouchGL.mm)
         list(APPEND SRCS src/opengl/CocoaTouchExternalImage.mm)
@@ -198,6 +200,10 @@ if (ANDROID)
     target_link_libraries(${TARGET} PUBLIC GLESv3 EGL android)
 endif()
 
+if (FILAMENT_USE_SWIFTSHADER)
+    target_link_libraries(${TARGET} PRIVATE swiftshader PUBLIC ${SWIFTSHADER_EGL} ${SWIFTSHADER_GLES})
+endif()
+
 if (APPLE AND NOT IOS)
     target_link_libraries(${TARGET} PRIVATE "-framework Cocoa")
 endif()
@@ -215,7 +221,7 @@ if (FILAMENT_SUPPORTS_VULKAN)
 endif()
 
 if (FILAMENT_SUPPORTS_METAL)
-    target_link_libraries(${TARGET} PUBLIC "-framework Metal")
+    target_link_libraries(${TARGET} PUBLIC "-framework Metal -framework CoreVideo")
 endif()
 
 if (LINUX)
@@ -248,10 +254,6 @@ set(LINUX_LINKER_OPTIMIZATION_FLAGS
         -Wl,--exclude-libs,bluegl
 )
 
-set(LINUX_COMPILER_FLAGS
-        -fPIC
-)
-
 if (MSVC)
     set(FILAMENT_WARNINGS /W3)
 else()
@@ -273,7 +275,6 @@ target_compile_options(${TARGET} PRIVATE
         ${FILAMENT_WARNINGS}
         $<$<CONFIG:Release>:${OPTIMIZATION_FLAGS}>
         $<$<AND:$<PLATFORM_ID:Darwin>,$<CONFIG:Release>>:${DARWIN_OPTIMIZATION_FLAGS}>
-        $<$<PLATFORM_ID:Linux>:${LINUX_COMPILER_FLAGS}>
 )
 
 target_link_libraries(${TARGET} PRIVATE
@@ -300,7 +301,8 @@ if (APPLE)
         test/Arguments.cpp
         test/test_MissingRequiredAttributes.cpp
         test/test_ReadPixels.cpp
-        test/test_BufferUpdates.cpp)
+        test/test_BufferUpdates.cpp
+        test/test_MRT.cpp)
 
     target_link_libraries(backend_test PRIVATE
         backend
@@ -337,7 +339,7 @@ if (APPLE)
     endif()
 endif()
 
-if (APPLE AND NOT IOS)
+if (APPLE AND NOT IOS AND NOT FILAMENT_USE_SWIFTSHADER)
     add_executable(backend_test_mac test/mac_runner.mm)
     target_link_libraries(backend_test_mac PRIVATE "-framework Metal -framework AppKit -framework QuartzCore")
     # Because each test case is a separate file, the -force_load flag is necessary to prevent the

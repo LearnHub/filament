@@ -62,7 +62,7 @@ inline void assertSingleTargetApi(MaterialBuilderBase::TargetApi api) {
     assert(bits && !(bits & bits - 1u));
 }
 
-void MaterialBuilderBase::prepare() {
+void MaterialBuilderBase::prepare(bool vulkanSemantics) {
     mCodeGenPermutations.clear();
     mShaderModels.reset();
 
@@ -78,6 +78,12 @@ void MaterialBuilderBase::prepare() {
     // OpenGL is a special case. If we're doing any optimization, then we need to go to Spir-V.
     TargetLanguage glTargetLanguage = mOptimization > MaterialBuilder::Optimization::PREPROCESSOR ?
             TargetLanguage::SPIRV : TargetLanguage::GLSL;
+    if (vulkanSemantics) {
+        // Currently GLSLPostProcessor.cpp is incapable of compiling SPIRV to GLSL without
+        // running the optimizer. For now we just activate the optimizer in that case.
+        mOptimization = MaterialBuilder::Optimization::PERFORMANCE;
+        glTargetLanguage = TargetLanguage::SPIRV;
+    }
 
     // Select OpenGL as the default TargetApi if none was specified.
     if (none(mTargetApi)) {
@@ -123,6 +129,11 @@ void MaterialBuilderBase::shutdown() {
 
 MaterialBuilder& MaterialBuilder::name(const char* name) noexcept {
     mMaterialName = CString(name);
+    return *this;
+}
+
+MaterialBuilder& MaterialBuilder::fileName(const char* fileName) noexcept {
+    mFileName = CString(fileName);
     return *this;
 }
 
@@ -344,6 +355,11 @@ MaterialBuilder& MaterialBuilder::variantFilter(uint8_t variantFilter) noexcept 
     return *this;
 }
 
+MaterialBuilder& MaterialBuilder::shaderDefine(const char* name, const char* value) noexcept {
+    mDefines.emplace_back(name, value);
+    return *this;
+}
+
 bool MaterialBuilder::hasExternalSampler() const noexcept {
     for (size_t i = 0, c = mParameterCount; i < c; i++) {
         auto const& param = mParameters[i];
@@ -355,7 +371,7 @@ bool MaterialBuilder::hasExternalSampler() const noexcept {
 }
 
 void MaterialBuilder::prepareToBuild(MaterialInfo& info) noexcept {
-    MaterialBuilderBase::prepare();
+    MaterialBuilderBase::prepare(mEnableFramebufferFetch);
 
     // Build the per-material sampler block and uniform block.
     filament::SamplerInterfaceBlock::Builder sbb;
@@ -468,8 +484,13 @@ bool MaterialBuilder::runSemanticAnalysis() noexcept {
 
     TargetApi targetApi = params.targetApi;
     assertSingleTargetApi(targetApi);
-    ShaderModel model = static_cast<ShaderModel>(params.shaderModel);
 
+    if (mEnableFramebufferFetch) {
+        // framebuffer fetch is only available with vulkan semantics
+        targetApi = TargetApi::VULKAN;
+    }
+
+    ShaderModel model = static_cast<ShaderModel>(params.shaderModel);
     std::string shaderCode = peek(ShaderType::VERTEX, params, mProperties);
     bool result = glslTools.analyzeVertexShader(shaderCode, model, mMaterialDomain, targetApi);
     if (!result) return false;
@@ -501,11 +522,23 @@ bool MaterialBuilder::checkLiteRequirements() noexcept {
     return true;
 }
 
-bool MaterialBuilder::ShaderCode::resolveIncludes(IncludeCallback callback) noexcept {
+bool MaterialBuilder::ShaderCode::resolveIncludes(IncludeCallback callback,
+        const utils::CString& fileName) noexcept {
     if (!mCode.empty()) {
-        if (!::filamat::resolveIncludes(utils::CString(""), mCode, callback)) {
+        ResolveOptions options {
+            .insertLineDirectives = true,
+            .insertLineDirectiveCheck = true
+        };
+        IncludeResult source {
+            .includeName = fileName,
+            .text = mCode,
+            .lineNumberOffset = getLineOffset(),
+            .name = utils::CString("")
+        };
+        if (!::filamat::resolveIncludes(source, callback, options)) {
             return false;
         }
+        mCode = source.text;
     }
 
     mIncludesResolved = true;
@@ -552,7 +585,7 @@ bool MaterialBuilder::generateShaders(const std::vector<Variant>& variants, Chun
     std::vector<uint32_t> spirv;
     std::string msl;
 
-    ShaderGenerator sg(mProperties, mVariables, mMaterialCode.getResolved(),
+    ShaderGenerator sg(mProperties, mVariables, mOutputs, mDefines, mMaterialCode.getResolved(),
             mMaterialCode.getLineOffset(), mMaterialVertexCode.getResolved(),
             mMaterialVertexCode.getLineOffset(), mMaterialDomain);
 
@@ -589,18 +622,40 @@ bool MaterialBuilder::generateShaders(const std::vector<Variant>& variants, Chun
             metalEntry.variant = v.variant;
 
             // Generate raw shader code.
+            // The quotes in Google-style line directives cause problems with certain drivers. These
+            // directives are optimized away when using the full filamat, so down below we
+            // explicitly remove them when using filamat lite.
             std::string shader;
             if (v.stage == filament::backend::ShaderType::VERTEX) {
                 shader = sg.createVertexProgram(
                         shaderModel, targetApi, targetLanguage, info, v.variant,
                         mInterpolation, mVertexDomain);
+#ifdef FILAMAT_LITE
+                GLSLToolsLite glslTools;
+                glslTools.removeGoogleLineDirectives(shader);
+#endif
             } else if (v.stage == filament::backend::ShaderType::FRAGMENT) {
                 shader = sg.createFragmentProgram(
                         shaderModel, targetApi, targetLanguage, info, v.variant, mInterpolation);
+#ifdef FILAMAT_LITE
+                GLSLToolsLite glslTools;
+                glslTools.removeGoogleLineDirectives(shader);
+#endif
             }
 
 #ifndef FILAMAT_LITE
-            bool ok = postProcessor.process(shader, v.stage, shaderModel, &shader, pSpirv, pMsl);
+
+            GLSLPostProcessor::Config config{
+                    .shaderType = v.stage,
+                    .shaderModel = shaderModel,
+                    .glsl = {}
+            };
+
+            if (mEnableFramebufferFetch) {
+                config.glsl.subpassInputToColorLocation.emplace_back(0, 0);
+            }
+
+            bool ok = postProcessor.process(shader, config, &shader, pSpirv, pMsl);
 #else
             bool ok = true;
 #endif
@@ -670,6 +725,45 @@ bool MaterialBuilder::generateShaders(const std::vector<Variant>& variants, Chun
     return true;
 }
 
+MaterialBuilder& MaterialBuilder::output(VariableQualifier qualifier, OutputTarget target,
+        OutputType type, const char* name) noexcept {
+
+    ASSERT_PRECONDITION(target != OutputTarget::DEPTH || type == OutputType::FLOAT,
+            "Depth outputs must be of type FLOAT.");
+    ASSERT_PRECONDITION(target != OutputTarget::DEPTH || qualifier == VariableQualifier::OUT,
+            "Depth outputs must use OUT qualifier.");
+
+    // Unconditionally add this output, then we'll check if we've maxed on on any particular target.
+    mOutputs.emplace_back(name, qualifier, target, type);
+
+    uint8_t colorOutputCount = 0;
+    uint8_t depthOutputCount = 0;
+    for (const auto& output : mOutputs) {
+        if (output.target == OutputTarget::COLOR) {
+            colorOutputCount++;
+        }
+        if (output.target == OutputTarget::DEPTH) {
+            depthOutputCount++;
+        }
+    }
+
+    ASSERT_PRECONDITION(colorOutputCount <= MAX_COLOR_OUTPUT,
+            "A maximum of %d COLOR outputs is allowed.", MAX_COLOR_OUTPUT);
+    ASSERT_PRECONDITION(depthOutputCount <= MAX_DEPTH_OUTPUT,
+            "A maximum of %d DEPTH output is allowed.", MAX_DEPTH_OUTPUT);
+
+    assert(mOutputs.size() <= MAX_COLOR_OUTPUT + MAX_DEPTH_OUTPUT);
+
+    return *this;
+}
+
+MaterialBuilder& MaterialBuilder::enableFramebufferFetch() noexcept {
+    // This API is temporary, it is used to enable EXT_framebuffer_fetch for GLSL shaders,
+    // this is used sparingly by filament's post-processing stage.
+    mEnableFramebufferFetch = true;
+    return *this;
+}
+
 Package MaterialBuilder::build() noexcept {
     if (materialBuilderClients == 0) {
         utils::slog.e << "Error: MaterialBuilder::init() must be called before build()."
@@ -678,9 +772,14 @@ Package MaterialBuilder::build() noexcept {
         return Package::invalidPackage();
     }
 
+    // Add a default color output.
+    if (mMaterialDomain == MaterialDomain::POST_PROCESS && mOutputs.empty()) {
+        output(VariableQualifier::OUT, OutputTarget::COLOR, OutputType::FLOAT4, "color");
+    }
+
     // Resolve all the #include directives within user code.
-    if (!mMaterialCode.resolveIncludes(mIncludeCallback) ||
-        !mMaterialVertexCode.resolveIncludes(mIncludeCallback)) {
+    if (!mMaterialCode.resolveIncludes(mIncludeCallback, mFileName) ||
+        !mMaterialVertexCode.resolveIncludes(mIncludeCallback, mFileName)) {
         return Package::invalidPackage();
     }
 
@@ -725,7 +824,7 @@ Package MaterialBuilder::build() noexcept {
 
 const std::string MaterialBuilder::peek(filament::backend::ShaderType type,
         const CodeGenParams& params, const PropertyList& properties) noexcept {
-    ShaderGenerator sg(properties, mVariables, mMaterialCode.getResolved(),
+    ShaderGenerator sg(properties, mVariables, mOutputs, mDefines, mMaterialCode.getResolved(),
             mMaterialCode.getLineOffset(), mMaterialVertexCode.getResolved(),
             mMaterialVertexCode.getLineOffset(), mMaterialDomain);
 

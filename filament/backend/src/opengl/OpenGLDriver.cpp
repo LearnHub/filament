@@ -31,6 +31,10 @@
 #include <utils/Panic.h>
 #include <utils/Systrace.h>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 // To emulate EXT_multisampled_render_to_texture properly we need to be able to copy from
 // a non-ms texture to an ms attachment. This is only allowed with OpenGL (not GLES), which
 // would be fine for us. However, this is also not trivial to implement in Metal so for now
@@ -577,6 +581,7 @@ void OpenGLDriver::textureStorage(OpenGLDriver::GLTexture* t,
             glTexStorage2D(t->gl.target, GLsizei(t->levels), t->gl.internalFormat,
                     GLsizei(width), GLsizei(height));
             break;
+        case GL_TEXTURE_3D:
         case GL_TEXTURE_2D_ARRAY: {
             glTexStorage3D(t->gl.target, GLsizei(t->levels), t->gl.internalFormat,
                     GLsizei(width), GLsizei(height), GLsizei(depth));
@@ -632,18 +637,19 @@ void OpenGLDriver::createTextureR(Handle<HwTexture> th, SamplerType target, uint
                     // we can't be here -- doesn't mater what we do
                 case SamplerType::SAMPLER_2D:
                     t->gl.target = GL_TEXTURE_2D;
-                    t->gl.targetIndex = (uint8_t)
-                            gl.getIndexForTextureTarget(GL_TEXTURE_2D);
+                    t->gl.targetIndex = (uint8_t)gl.getIndexForTextureTarget(GL_TEXTURE_2D);
+                    break;
+                case SamplerType::SAMPLER_3D:
+                    t->gl.target = GL_TEXTURE_3D;
+                    t->gl.targetIndex = (uint8_t)gl.getIndexForTextureTarget(GL_TEXTURE_3D);
                     break;
                 case SamplerType::SAMPLER_2D_ARRAY:
                     t->gl.target = GL_TEXTURE_2D_ARRAY;
-                    t->gl.targetIndex = (uint8_t)
-                            gl.getIndexForTextureTarget(GL_TEXTURE_2D_ARRAY);
+                    t->gl.targetIndex = (uint8_t)gl.getIndexForTextureTarget(GL_TEXTURE_2D_ARRAY);
                     break;
                 case SamplerType::SAMPLER_CUBEMAP:
                     t->gl.target = GL_TEXTURE_CUBE_MAP;
-                    t->gl.targetIndex = (uint8_t)
-                            gl.getIndexForTextureTarget(GL_TEXTURE_CUBE_MAP);
+                    t->gl.targetIndex = (uint8_t)gl.getIndexForTextureTarget(GL_TEXTURE_CUBE_MAP);
                     break;
             }
 
@@ -728,6 +734,10 @@ void OpenGLDriver::importTextureR(Handle<HwTexture> th, intptr_t id,
             t->gl.target = GL_TEXTURE_2D;
             t->gl.targetIndex = (uint8_t)gl.getIndexForTextureTarget(GL_TEXTURE_2D);
             break;
+        case SamplerType::SAMPLER_3D:
+            t->gl.target = GL_TEXTURE_3D;
+            t->gl.targetIndex = (uint8_t)gl.getIndexForTextureTarget(GL_TEXTURE_3D);
+            break;
         case SamplerType::SAMPLER_2D_ARRAY:
             t->gl.target = GL_TEXTURE_2D_ARRAY;
             t->gl.targetIndex = (uint8_t)gl.getIndexForTextureTarget(GL_TEXTURE_2D_ARRAY);
@@ -762,8 +772,6 @@ void OpenGLDriver::framebufferTexture(backend::TargetBufferInfo const& binfo,
         return std::max(size_t(1), value >> level);
     };
 #endif
-
-    assert(binfo.handle);
 
     GLTexture* t = handle_cast<GLTexture*>(binfo.handle);
 
@@ -819,7 +827,7 @@ void OpenGLDriver::framebufferTexture(backend::TargetBufferInfo const& binfo,
             }
             CHECK_GL_ERROR(utils::slog.e)
         } else
-#if GLES31_HEADERS
+#ifdef GL_EXT_multisampled_render_to_texture
             if (gl.ext.EXT_multisampled_render_to_texture && t->depth <= 1) {
                 assert(rt->gl.samples > 1);
                 // We have a multi-sample rendertarget and we have EXT_multisampled_render_to_texture,
@@ -937,7 +945,9 @@ void OpenGLDriver::createDefaultRenderTargetR(
 
     construct<GLRenderTarget>(rth, 0, 0);  // FIXME: we don't know the width/height
 
-    uint32_t framebuffer, colorbuffer, depthbuffer;
+    uint32_t framebuffer = 0;
+    uint32_t colorbuffer = 0;
+    uint32_t depthbuffer = 0;
     mPlatform.createDefaultRenderTarget(framebuffer, colorbuffer, depthbuffer);
 
     GLRenderTarget* rt = handle_cast<GLRenderTarget*>(rth);
@@ -1015,7 +1025,6 @@ void OpenGLDriver::createRenderTargetR(Handle<HwRenderTarget> rth,
     // handle special cases first (where depth/stencil are packed)
     bool specialCased = false;
     if ((targets & TargetBufferFlags::DEPTH_AND_STENCIL) == TargetBufferFlags::DEPTH_AND_STENCIL) {
-        assert(depth.handle);
         assert(!stencil.handle || stencil.handle == depth.handle);
         rt->gl.depth.texture = handle_cast<GLTexture*>(depth.handle);
         rt->gl.depth.level = depth.level;
@@ -1483,6 +1492,11 @@ bool OpenGLDriver::isRenderTargetFormatSupported(TextureFormat format) {
     }
 }
 
+bool OpenGLDriver::isFrameBufferFetchSupported() {
+    auto& gl = mContext;
+    return gl.ext.EXT_shader_framebuffer_fetch;
+}
+
 bool OpenGLDriver::isFrameTimeSupported() {
     return mFrameTimeSupported;
 }
@@ -1495,20 +1509,16 @@ bool OpenGLDriver::isFrameTimeSupported() {
 void OpenGLDriver::commit(Handle<HwSwapChain> sch) {
     DEBUG_MARKER()
 
-    if (sch) {
-        HwSwapChain* sc = handle_cast<HwSwapChain*>(sch);
-        mPlatform.commit(sc->swapChain);
-    }
+    HwSwapChain* sc = handle_cast<HwSwapChain*>(sch);
+    mPlatform.commit(sc->swapChain);
 }
 
 void OpenGLDriver::makeCurrent(Handle<HwSwapChain> schDraw, Handle<HwSwapChain> schRead) {
     DEBUG_MARKER()
 
-    if (schDraw && schRead) {
-        HwSwapChain* scDraw = handle_cast<HwSwapChain*>(schDraw);
-        HwSwapChain* scRead = handle_cast<HwSwapChain*>(schRead);
-        mPlatform.makeCurrent(scDraw->swapChain, scRead->swapChain);
-    }
+    HwSwapChain* scDraw = handle_cast<HwSwapChain*>(schDraw);
+    HwSwapChain* scRead = handle_cast<HwSwapChain*>(schRead);
+    mPlatform.makeCurrent(scDraw->swapChain, scRead->swapChain);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -1551,7 +1561,6 @@ void OpenGLDriver::loadUniformBuffer(Handle<HwUniformBuffer> ubh, BufferDescript
     DEBUG_MARKER()
 
     GLUniformBuffer* ub = handle_cast<GLUniformBuffer *>(ubh);
-    assert(ub);
 
     auto& gl = mContext;
     if (p.size > 0) {
@@ -1648,6 +1657,22 @@ void OpenGLDriver::update2DImage(Handle<HwTexture> th,
     }
 }
 
+void OpenGLDriver::update3DImage(Handle<HwTexture> th,
+        uint32_t level, uint32_t xoffset, uint32_t yoffset, uint32_t zoffset,
+        uint32_t width, uint32_t height, uint32_t depth,
+        PixelBufferDescriptor&& data) {
+    DEBUG_MARKER()
+
+    GLTexture* t = handle_cast<GLTexture *>(th);
+    if (data.type == PixelDataType::COMPRESSED) {
+        setCompressedTextureData(t,
+                level, xoffset, yoffset, zoffset, width, height, depth, std::move(data), nullptr);
+    } else {
+        setTextureData(t,
+                level, xoffset, yoffset, zoffset, width, height, depth, std::move(data), nullptr);
+    }
+}
+
 void OpenGLDriver::updateCubeImage(Handle<HwTexture> th, uint32_t level,
         PixelBufferDescriptor&& data, FaceOffsets faceOffsets) {
     DEBUG_MARKER()
@@ -1725,6 +1750,14 @@ void OpenGLDriver::setTextureData(GLTexture* t,
             glTexSubImage2D(t->gl.target, GLint(level),
                     GLint(xoffset), GLint(yoffset),
                     width, height, glFormat, glType, p.buffer);
+            break;
+        case SamplerType::SAMPLER_3D:
+            bindTexture(OpenGLContext::MAX_TEXTURE_UNIT_COUNT - 1, t);
+            gl.activeTexture(OpenGLContext::MAX_TEXTURE_UNIT_COUNT - 1);
+            assert(t->gl.target == GL_TEXTURE_3D);
+            glTexSubImage3D(t->gl.target, GLint(level),
+                    GLint(xoffset), GLint(yoffset), GLint(zoffset),
+                    width, height, depth, glFormat, glType, p.buffer);
             break;
         case SamplerType::SAMPLER_2D_ARRAY:
             // NOTE: GL_TEXTURE_2D_MULTISAMPLE is not allowed
@@ -1804,6 +1837,14 @@ void OpenGLDriver::setCompressedTextureData(GLTexture* t,  uint32_t level,
             glCompressedTexSubImage2D(t->gl.target, GLint(level),
                     GLint(xoffset), GLint(yoffset),
                     width, height, t->gl.internalFormat, imageSize, p.buffer);
+            break;
+        case SamplerType::SAMPLER_3D:
+            bindTexture(OpenGLContext::MAX_TEXTURE_UNIT_COUNT - 1, t);
+            gl.activeTexture(OpenGLContext::MAX_TEXTURE_UNIT_COUNT - 1);
+            assert(t->gl.target == GL_TEXTURE_3D);
+            glCompressedTexSubImage3D(t->gl.target, GLint(level),
+                    GLint(xoffset), GLint(yoffset), GLint(zoffset),
+                    width, height, depth, t->gl.internalFormat, imageSize, p.buffer);
             break;
         case SamplerType::SAMPLER_2D_ARRAY:
             assert(t->gl.target == GL_TEXTURE_2D_ARRAY);
@@ -2092,6 +2133,10 @@ void OpenGLDriver::beginRenderPass(Handle<HwRenderTarget> rth,
                 params.clearColor, params.clearDepth, params.clearStencil);
     }
 
+    // we need to reset those after we call clearWithRasterPipe()
+    mRenderPassColorWrite = any(clearFlags & TargetBufferFlags::COLOR_ALL);
+    mRenderPassDepthWrite = any(clearFlags & TargetBufferFlags::DEPTH);
+
     gl.viewport(params.viewport.left, params.viewport.bottom,
             params.viewport.width, params.viewport.height);
 
@@ -2108,13 +2153,20 @@ void OpenGLDriver::endRenderPass(int) {
     DEBUG_MARKER()
     auto& gl = mContext;
 
-    assert(mRenderPassTarget);
+    assert(mRenderPassTarget); // endRenderPass() called without beginRenderPass()?
 
     GLRenderTarget const* const rt = handle_cast<GLRenderTarget*>(mRenderPassTarget);
 
-    const TargetBufferFlags discardFlags = mRenderPassParams.flags.discardEnd & rt->targets;
+    TargetBufferFlags discardFlags = mRenderPassParams.flags.discardEnd & rt->targets;
     if (rt->gl.fbo_read) {
         resolvePass(ResolveAction::STORE, rt, discardFlags);
+    }
+
+    if (!mRenderPassColorWrite) {
+        discardFlags &= ~TargetBufferFlags::COLOR_ALL;
+    }
+    if (!mRenderPassDepthWrite) {
+        discardFlags &= ~TargetBufferFlags::DEPTH;
     }
 
     // glInvalidateFramebuffer appeared on GLES 3.0 and GL4.3, for simplicity we just
@@ -2142,6 +2194,9 @@ void OpenGLDriver::endRenderPass(int) {
 
     mRenderPassTarget.clear();
 }
+
+
+void OpenGLDriver::nextSubpass(int) {}
 
 
 void OpenGLDriver::resolvePass(ResolveAction action, GLRenderTarget const* rt,
@@ -2220,6 +2275,13 @@ void OpenGLDriver::setRenderPrimitiveBuffer(Handle<HwRenderPrimitive> rph,
                 assert(bi != 0xFF);
                 gl.bindBuffer(GL_ARRAY_BUFFER, eb->gl.buffers[bi]);
                 if (UTILS_UNLIKELY(eb->attributes[i].flags & Attribute::FLAG_INTEGER_TARGET)) {
+
+                    // Emscripten regressed at the following PR so we work around it for now.
+                    // https://github.com/emscripten-core/emscripten/pull/11225
+                    #ifdef __EMSCRIPTEN__
+                    EM_ASM_INT({ GL.currArrayBuffer = GLctx.currentArrayBufferBinding; });
+                    #endif
+
                     glVertexAttribIPointer(GLuint(i),
                             getComponentCount(eb->attributes[i].type),
                             getComponentType(eb->attributes[i].type),
@@ -2260,14 +2322,12 @@ void OpenGLDriver::setRenderPrimitiveRange(Handle<HwRenderPrimitive> rph,
         uint32_t minIndex, uint32_t maxIndex, uint32_t count) {
     DEBUG_MARKER()
 
-    if (rph) {
-        GLRenderPrimitive* const rp = handle_cast<GLRenderPrimitive*>(rph);
-        rp->type = pt;
-        rp->offset = offset * ((rp->gl.indicesType == GL_UNSIGNED_INT) ? 4 : 2);
-        rp->count = count;
-        rp->minIndex = minIndex;
-        rp->maxIndex = maxIndex > minIndex ? maxIndex : rp->maxVertexCount - 1; // sanitize max index
-    }
+    GLRenderPrimitive* const rp = handle_cast<GLRenderPrimitive*>(rph);
+    rp->type = pt;
+    rp->offset = offset * ((rp->gl.indicesType == GL_UNSIGNED_INT) ? 4 : 2);
+    rp->count = count;
+    rp->minIndex = minIndex;
+    rp->maxIndex = maxIndex > minIndex ? maxIndex : rp->maxVertexCount - 1; // sanitize max index
 }
 
 // Sets up a scissor rectangle that automatically gets clipped against the viewport.
@@ -2578,27 +2638,33 @@ void OpenGLDriver::insertEventMarker(char const* string, size_t len) {
 void OpenGLDriver::pushGroupMarker(char const* string,  size_t len) {
 #ifdef GL_EXT_debug_marker
     auto& gl = mContext;
-    if (gl.ext.EXT_debug_marker) {
+    if (UTILS_LIKELY(gl.ext.EXT_debug_marker)) {
         glPushGroupMarkerEXT(GLsizei(len ? len : strlen(string)), string);
-    }
+    } else
 #endif
-}
-
-void OpenGLDriver::startCapture(int) {
-
-}
-
-void OpenGLDriver::stopCapture(int) {
-
+    {
+        SYSTRACE_CONTEXT();
+        SYSTRACE_NAME_BEGIN(string);
+    }
 }
 
 void OpenGLDriver::popGroupMarker(int) {
 #ifdef GL_EXT_debug_marker
     auto& gl = mContext;
-    if (gl.ext.EXT_debug_marker) {
+    if (UTILS_LIKELY(gl.ext.EXT_debug_marker)) {
         glPopGroupMarkerEXT();
-    }
+    } else
 #endif
+    {
+        SYSTRACE_CONTEXT();
+        SYSTRACE_NAME_END();
+    }
+}
+
+void OpenGLDriver::startCapture(int) {
+}
+
+void OpenGLDriver::stopCapture(int) {
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -2790,9 +2856,13 @@ void OpenGLDriver::finish(int) {
     mTimerQueryImpl->flush();
     executeGpuCommandsCompleteOps();
     executeEveryNowAndThenOps();
-    // since we executed a glFinish(), all pending tasks should be done
+    // Note: since we executed a glFinish(), all pending tasks should be done
     assert(mGpuCommandCompleteOps.empty());
-    assert(mEveryNowAndThenOps.empty());
+
+    // however, some tasks rely on a separated thread to publish their result (e.g.
+    // endTimerQuery), so the result could very well not be ready, and the task will
+    // linger a bit longer, this is only true for mEveryNowAndThenOps tasks.
+    // The fallout of this is that we can't assert that mEveryNowAndThenOps is empty.
 }
 
 UTILS_NOINLINE

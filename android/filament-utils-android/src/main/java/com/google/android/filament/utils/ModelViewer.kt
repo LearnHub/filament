@@ -24,7 +24,15 @@ import com.google.android.filament.*
 import com.google.android.filament.android.DisplayHelper
 import com.google.android.filament.android.UiHelper
 import com.google.android.filament.gltfio.*
+import kotlinx.coroutines.*
 import java.nio.Buffer
+
+private const val kNearPlane = 0.5
+private const val kFarPlane = 10000.0
+private const val kFovDegrees = 45.0
+private const val kAperture = 16f
+private const val kShutterSpeed = 1f / 125f
+private const val kSensitivity = 100f
 
 /**
  * Helps render glTF models into a [SurfaceView] or [TextureView] with an orbit controller.
@@ -51,8 +59,7 @@ import java.nio.Buffer
  *
  * See `sample-gltf-viewer` for a usage example.
  */
-class ModelViewer : android.view.View.OnTouchListener {
-
+class ModelViewer(val engine: Engine) : android.view.View.OnTouchListener {
     var asset: FilamentAsset? = null
         private set
 
@@ -63,7 +70,9 @@ class ModelViewer : android.view.View.OnTouchListener {
     val progress
         get() = resourceLoader.asyncGetLoadProgress()
 
-    val engine: Engine
+    var normalizeSkinningWeights = true
+    var recomputeBoundingBoxes = false
+
     val scene: Scene
     val view: View
     val camera: Camera
@@ -71,10 +80,12 @@ class ModelViewer : android.view.View.OnTouchListener {
 
     private val uiHelper: UiHelper = UiHelper(UiHelper.ContextErrorPolicy.DONT_CHECK)
     private lateinit var displayHelper: DisplayHelper
-    private val cameraManipulator: Manipulator
-    private val gestureDetector: GestureDetector
+    private lateinit var cameraManipulator: Manipulator
+    private lateinit var gestureDetector: GestureDetector
+    private var surfaceView: SurfaceView? = null
+    private var textureView: TextureView? = null
+
     private val renderer: Renderer
-    private lateinit var surfaceView: SurfaceView
     private var swapChain: SwapChain? = null
     private var assetLoader: AssetLoader
     private var resourceLoader: ResourceLoader
@@ -84,15 +95,7 @@ class ModelViewer : android.view.View.OnTouchListener {
     private val target = DoubleArray(3)
     private val upward = DoubleArray(3)
 
-    private val kNearPlane = 0.5
-    private val kFarPlane = 10000.0
-    private val kFovDegrees = 45.0
-    private val kAperture = 16f
-    private val kShutterSpeed = 1f / 125f
-    private val kSensitivity = 100f
-
     init {
-        engine = Engine.create()
         renderer = engine.createRenderer()
         scene = engine.createScene()
         camera = engine.createCamera().apply { setExposure(kAperture, kShutterSpeed, kSensitivity) }
@@ -101,7 +104,7 @@ class ModelViewer : android.view.View.OnTouchListener {
         view.camera = camera
 
         assetLoader = AssetLoader(engine, MaterialProvider(engine), EntityManager.get())
-        resourceLoader = ResourceLoader(engine)
+        resourceLoader = ResourceLoader(engine, normalizeSkinningWeights, recomputeBoundingBoxes)
 
         // Always add a direct light source since it is required for shadowing.
         // We highly recommend adding an indirect light as well.
@@ -111,7 +114,7 @@ class ModelViewer : android.view.View.OnTouchListener {
         val (r, g, b) = Colors.cct(6_500.0f)
         LightManager.Builder(LightManager.Type.DIRECTIONAL)
                 .color(r, g, b)
-                .intensity(300_000.0f)
+                .intensity(100_000.0f)
                 .direction(0.0f, -1.0f, 0.0f)
                 .castShadows(true)
                 .build(engine, light)
@@ -119,9 +122,9 @@ class ModelViewer : android.view.View.OnTouchListener {
         scene.addEntity(light)
     }
 
-    constructor(surfaceView: SurfaceView) {
-        cameraManipulator = Manipulator.Builder()
-                .targetPosition(0.0f, 0.0f, -4.0f)
+    constructor(surfaceView: SurfaceView, engine: Engine = Engine.create(), manipulator: Manipulator? = null) : this(engine) {
+        cameraManipulator = manipulator ?: Manipulator.Builder()
+                .targetPosition(kDefaultObjectPosition.x, kDefaultObjectPosition.y, kDefaultObjectPosition.z)
                 .viewport(surfaceView.width, surfaceView.height)
                 .build(Manipulator.Mode.ORBIT)
 
@@ -134,13 +137,15 @@ class ModelViewer : android.view.View.OnTouchListener {
     }
 
     @Suppress("unused")
-    constructor(textureView: TextureView) {
-        cameraManipulator = Manipulator.Builder()
-                .targetPosition(0.0f, 0.0f, -4.0f)
+    constructor(textureView: TextureView, engine: Engine = Engine.create(), manipulator: Manipulator? = null) : this(engine) {
+        cameraManipulator = manipulator ?: Manipulator.Builder()
+                .targetPosition(kDefaultObjectPosition.x, kDefaultObjectPosition.y, kDefaultObjectPosition.z)
                 .viewport(textureView.width, textureView.height)
                 .build(Manipulator.Mode.ORBIT)
 
+        this.textureView = textureView
         gestureDetector = GestureDetector(textureView, cameraManipulator)
+        displayHelper = DisplayHelper(textureView.context)
         uiHelper.renderCallback = SurfaceCallback()
         uiHelper.attachTo(textureView)
         addDetachListener(textureView)
@@ -161,6 +166,8 @@ class ModelViewer : android.view.View.OnTouchListener {
 
     /**
      * Loads a JSON-style glTF file and populates the Filament scene.
+     *
+     * The given callback is triggered for each requested resource.
      */
     fun loadModelGltf(buffer: Buffer, callback: (String) -> Buffer) {
         destroyModel()
@@ -176,17 +183,32 @@ class ModelViewer : android.view.View.OnTouchListener {
     }
 
     /**
-     * Sets up a root transform on the current model to make it fit into the viewing frustum.
+     * Loads a JSON-style glTF file and populates the Filament scene.
+     *
+     * The given callback is triggered from a worker thread for each requested resource.
      */
-    fun transformToUnitCube() {
+    fun loadModelGltfAsync(buffer: Buffer, callback: (String) -> Buffer) {
+        destroyModel()
+        asset = assetLoader.createAssetFromJson(buffer)
+        CoroutineScope(Dispatchers.IO).launch {
+            fetchResources(asset!!, callback)
+        }
+    }
+
+    /**
+     * Sets up a root transform on the current model to make it fit into a unit cube.
+     *
+     * @param centerPoint Coordinate of center point of unit cube, defaults to < 0, 0, -4 >
+     */
+    fun transformToUnitCube(centerPoint: Float3 = kDefaultObjectPosition) {
         asset?.let { asset ->
             val tm = engine.transformManager
-            val center = asset.boundingBox.center.let { v-> Float3(v[0], v[1], v[2]) }
+            var center = asset.boundingBox.center.let { v-> Float3(v[0], v[1], v[2]) }
             val halfExtent = asset.boundingBox.halfExtent.let { v-> Float3(v[0], v[1], v[2]) }
             val maxExtent = 2.0f * max(halfExtent)
             val scaleFactor = 2.0f / maxExtent
-            center.z = center.z + 4.0f / scaleFactor
-            val transform = scale(Float3(scaleFactor)) * translation(Float3(-center))
+            center -= centerPoint / scaleFactor
+            val transform = scale(Float3(scaleFactor)) * translation(-center)
             tm.setTransform(tm.getInstance(asset.root), transpose(transform).toFloatArray())
         }
     }
@@ -196,6 +218,7 @@ class ModelViewer : android.view.View.OnTouchListener {
      */
     fun destroyModel() {
         asset?.let { asset ->
+            this.scene.removeEntities(asset.entities)
             assetLoader.destroyAsset(asset)
             this.asset = null
             this.animator = null
@@ -204,6 +227,9 @@ class ModelViewer : android.view.View.OnTouchListener {
 
     /**
      * Renders the model and updates the Filament camera.
+     *
+     * @param frameTimeNanos time in nanoseconds when the frame started being rendered,
+     *                       typically comes from {@link android.view.Choreographer.FrameCallback}
      */
     fun render(frameTimeNanos: Long) {
         if (!uiHelper.isReadyToRender) {
@@ -236,6 +262,7 @@ class ModelViewer : android.view.View.OnTouchListener {
         while (popRenderables()) {
             scene.addEntities(readyRenderables.take(count).toIntArray())
         }
+        scene.addEntities(asset.lightEntities)
     }
 
     private fun addDetachListener(view: android.view.View) {
@@ -274,11 +301,29 @@ class ModelViewer : android.view.View.OnTouchListener {
         return true
     }
 
+    private suspend fun fetchResources(asset: FilamentAsset, callback: (String) -> Buffer) {
+        val items = HashMap<String, Buffer>()
+        val resourceUris = asset.resourceUris
+        for (resourceUri in resourceUris) {
+            items[resourceUri] = callback(resourceUri)
+        }
+
+        withContext(Dispatchers.Main) {
+            for ((uri, buffer) in items) {
+                resourceLoader.addResourceData(uri, buffer)
+            }
+            resourceLoader.asyncBeginLoad(asset)
+            animator = asset.animator
+            asset.releaseSourceData()
+        }
+    }
+
     inner class SurfaceCallback : UiHelper.RendererCallback {
         override fun onNativeWindowChanged(surface: Surface) {
             swapChain?.let { engine.destroySwapChain(it) }
             swapChain = engine.createSwapChain(surface)
-            displayHelper.attach(renderer, surfaceView.display)
+            surfaceView?.let { displayHelper.attach(renderer, it.display) }
+            textureView?.let { displayHelper.attach(renderer, it.display) }
         }
 
         override fun onDetachedFromSurface() {
@@ -296,5 +341,9 @@ class ModelViewer : android.view.View.OnTouchListener {
             camera.setProjection(kFovDegrees, aspect, kNearPlane, kFarPlane, Camera.Fov.VERTICAL)
             cameraManipulator.setViewport(width, height)
         }
+    }
+
+    companion object {
+        private val kDefaultObjectPosition = Float3(0.0f, 0.0f, -4.0f)
     }
 }

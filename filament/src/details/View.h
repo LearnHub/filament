@@ -26,6 +26,7 @@
 
 #include "details/Allocators.h"
 #include "details/Camera.h"
+#include "details/ColorGrading.h"
 #include "details/Froxelizer.h"
 #include "details/RenderTarget.h"
 #include "details/ShadowMap.h"
@@ -46,15 +47,20 @@
 
 #include <math/scalar.h>
 
-#include <array>
-#include <memory>
-
 namespace utils {
 class JobSystem;
 } // namespace utils;
 
+// Avoid warnings for using the ToneMapping API, which has been publically deprecated.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+#pragma warning push
+#pragma warning disable : 4996
+#endif
+
 namespace filament {
-namespace details {
 
 class FEngine;
 class FMaterialInstance;
@@ -174,7 +180,7 @@ public:
     void setShadowsEnabled(bool enabled) noexcept { mShadowingEnabled = enabled; }
 
     FCamera const* getDirectionalLightCamera() const noexcept {
-        return &mDirectionalShadowMap.getDebugCamera();
+        return &mShadowMapManager.getCascadeShadowMap(0)->getDebugCamera();
     }
 
     void setRenderTarget(FRenderTarget* renderTarget) noexcept {
@@ -207,6 +213,14 @@ public:
 
     ToneMapping getToneMapping() const noexcept {
         return mToneMapping;
+    }
+
+    void setColorGrading(FColorGrading* colorGrading) noexcept {
+        mColorGrading = colorGrading == nullptr ? mDefaultColorGrading : colorGrading;
+    }
+
+    const FColorGrading* getColorGrading() const noexcept {
+        return mColorGrading;
     }
 
     void setDithering(Dithering dithering) noexcept {
@@ -255,7 +269,9 @@ public:
         options.radius = math::max(0.0f, options.radius);
         options.bias = math::clamp(0.0f, 0.1f, options.bias);
         options.power = std::max(0.0f, options.power);
-        options.resolution = math::clamp(0.0f, 1.0f, options.resolution);
+        // snap to the closer of 0.5 or 1.0
+        options.resolution = std::floor(
+                math::clamp(1.0f, 2.0f, options.resolution * 2.0f) + 0.5f) * 0.5f;
         options.intensity = std::max(0.0f, options.intensity);
         mAmbientOcclusionOptions = options;
     }
@@ -284,14 +300,30 @@ public:
         mFogOptions = options;
     }
 
+    FogOptions getFogOptions() const noexcept {
+        return mFogOptions;
+    }
+
     void setDepthOfFieldOptions(DepthOfFieldOptions options) noexcept {
         options.focusDistance = std::max(0.0f, options.focusDistance);
         options.blurScale = std::max(0.0f, options.blurScale);
+        options.maxApertureDiameter = std::max(0.0f, options.maxApertureDiameter);
         mDepthOfFieldOptions = options;
     }
 
     DepthOfFieldOptions getDepthOfFieldOptions() const noexcept {
         return mDepthOfFieldOptions;
+    }
+
+    void setVignetteOptions(VignetteOptions options) noexcept {
+        options.roundness = math::saturate(options.roundness);
+        options.midPoint = math::saturate(options.midPoint);
+        options.feather = math::clamp(options.feather, 0.05f, 1.0f);
+        mVignetteOptions = options;
+    }
+
+    VignetteOptions getVignetteOptions() const noexcept {
+        return mVignetteOptions;
     }
 
     void setBlendMode(BlendMode blendMode) noexcept {
@@ -389,7 +421,10 @@ private:
     BloomOptions mBloomOptions;
     FogOptions mFogOptions;
     DepthOfFieldOptions mDepthOfFieldOptions;
+    VignetteOptions mVignetteOptions;
     BlendMode mBlendMode = BlendMode::OPAQUE;
+    const FColorGrading* mColorGrading = nullptr;
+    const FColorGrading* mDefaultColorGrading = nullptr;
 
     DynamicResolutionOptions mDynamicResolution;
     math::float2 mScale = 1.0f;
@@ -411,14 +446,18 @@ private:
     mutable bool mHasDirectionalLight = false;
     mutable bool mHasDynamicLighting = false;
     mutable bool mHasShadowing = false;
+
     ShadowMapManager mShadowMapManager;
-    mutable ShadowMap mDirectionalShadowMap;
-    mutable std::array<std::unique_ptr<ShadowMap>, CONFIG_MAX_SHADOW_CASTING_SPOTS> mSpotShadowMap;
 };
 
 FILAMENT_UPCAST(View)
 
-} // namespace details
 } // namespace filament
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning pop
+#endif
 
 #endif // TNT_FILAMENT_DETAILS_VIEW_H

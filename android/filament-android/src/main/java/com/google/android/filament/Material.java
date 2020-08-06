@@ -230,8 +230,10 @@ public class Material {
             MAT3,
             MAT4,
             SAMPLER_2D,
+            SAMPLER_2D_ARRAY,
             SAMPLER_CUBEMAP,
-            SAMPLER_EXTERNAL
+            SAMPLER_EXTERNAL,
+            SAMPLER_3D
         }
 
         public enum Precision {
@@ -322,6 +324,21 @@ public class Material {
     @NonNull
     public MaterialInstance createInstance() {
         long nativeInstance = nCreateInstance(getNativeObject());
+        if (nativeInstance == 0) throw new IllegalStateException("Couldn't create MaterialInstance");
+        return new MaterialInstance(this, nativeInstance);
+    }
+
+    /**
+     * Creates a new instance of this material with a specified name. Material instances should be
+     * freed using {@link Engine#destroyMaterialInstance(MaterialInstance)}.
+     *
+     * @param name arbitrary label to associate with the given material instance
+     *
+     * @return the new instance
+     */
+    @NonNull
+    public MaterialInstance createInstance(@NonNull String name) {
+        long nativeInstance = nCreateInstanceWithName(getNativeObject(), name);
         if (nativeInstance == 0) throw new IllegalStateException("Couldn't create MaterialInstance");
         return new MaterialInstance(this, nativeInstance);
     }
@@ -879,6 +896,7 @@ public class Material {
 
     private static native long nBuilderBuild(long nativeEngine, @NonNull Buffer buffer, int size);
     private static native long nCreateInstance(long nativeMaterial);
+    private static native long nCreateInstanceWithName(long nativeMaterial, @NonNull String name);
     private static native long nGetDefaultInstance(long nativeMaterial);
 
     private static native String nGetName(long nativeMaterial);

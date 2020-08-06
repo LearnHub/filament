@@ -41,7 +41,6 @@
 #include <vector>
 
 namespace filament {
-namespace details {
 
 class FEngine;
 class FCamera;
@@ -61,7 +60,7 @@ public:
 // (spot/point            light texture}
 //
 //  +----+                     +-+                     +----+
-// 0|....| <------------+     0| |         +-----------|0221| (e.g. offset=02, 2-point, 1-spot)
+// 0|....| <------------+     0| |         +-----------|0230| (e.g. offset=02, 3-lights)
 // 1|....|<--------+     \    1| |        /            |    |
 // 2:    :          \     +---2|0|<------+             |    |
 // 3:    : <-------- \--------3|3|                     :    :
@@ -267,7 +266,6 @@ private:
     };
 };
 
-} // namespace details
 } // namespace filament
 
 #endif // TNT_FILAMENT_DETAILS_FROXEL_H

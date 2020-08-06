@@ -17,9 +17,9 @@ section below.
 
 To build Filament for Android you must also install the following:
 
-- Android Studio 3.6 or more recent
+- Android Studio 4.0.1 or more recent
 - Android SDK
-- Android NDK "side-by-side" 21 or higher
+- Android NDK "side-by-side" 21.3 or higher
 
 ### Environment variables
 
@@ -86,9 +86,9 @@ The following CMake options are boolean options specific to Filament:
 - `FILAMENT_BUILD_FILAMAT`:        Build filamat and JNI buildings
 - `FILAMENT_SUPPORTS_METAL`:       Include the Metal backend
 - `FILAMENT_SUPPORTS_VULKAN`:      Include the Vulkan backend
-- `FILAMENT_GENERATE_JS_DOCS`:     Build WebGL documentation and tutorials
 - `FILAMENT_INSTALL_BACKEND_TEST`: Install the backend test library so it can be consumed on iOS
 - `FILAMENT_USE_EXTERNAL_GLES3`:   Experimental: Compile Filament against OpenGL ES 3
+- `FILAMENT_USE_SWIFTSHADER`:      Experimental: Compile Filament against SwiftShader
 - `FILAMENT_SKIP_SAMPLES`:         Don't build sample apps
 
 To turn an option on or off:
@@ -365,7 +365,7 @@ same version that our continuous builds use.
 
 ```
 cd <your chosen parent folder for the emscripten SDK>
-curl -L https://github.com/emscripten-core/emsdk/archive/1b1f08f.zip > emsdk.zip
+curl -L https://github.com/emscripten-core/emsdk/archive/1.39.19.zip > emsdk.zip
 unzip emsdk.zip ; mv emsdk-* emsdk ; cd emsdk
 python ./emsdk.py install latest
 python ./emsdk.py activate latest

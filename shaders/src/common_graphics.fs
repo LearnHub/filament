@@ -32,10 +32,10 @@ void unpremultiply(inout vec4 color) {
 vec3 ycbcrToRgb(float luminance, vec2 cbcr) {
     // Taken from https://developer.apple.com/documentation/arkit/arframe/2867984-capturedimage
     const mat4 ycbcrToRgbTransform = mat4(
-        1.0000, 1.0000, 1.0000, 0.0000,
-        0.0000, -0.3441, 1.7720, 0.0000,
-        1.4020, -0.7141, 0.0000, 0.0000,
-        -0.7010, 0.5291, -0.8860, 1.0000
+         1.0000,  1.0000,  1.0000,  0.0000,
+         0.0000, -0.3441,  1.7720,  0.0000,
+         1.4020, -0.7141,  0.0000,  0.0000,
+        -0.7010,  0.5291, -0.8860,  1.0000
     );
     return (ycbcrToRgbTransform * vec4(luminance, cbcr, 1.0)).rgb;
 }
@@ -96,4 +96,20 @@ vec3 decodeRGBM(vec4 c) {
 vec3 heatmap(float v) {
     vec3 r = v * 2.1 - vec3(1.8, 1.14, 0.3);
     return 1.0 - r * r;
+}
+
+vec3 uintToColorDebug(uint v) {
+    if (v == 0u) {
+        return vec3(0.0, 1.0, 0.0);     // green
+    } else if (v == 1u) {
+        return vec3(0.0, 0.0, 1.0);     // blue
+    } else if (v == 2u) {
+        return vec3(1.0, 1.0, 0.0);     // yellow
+    } else if (v == 3u) {
+        return vec3(1.0, 0.0, 0.0);     // red
+    } else if (v == 4u) {
+        return vec3(1.0, 0.0, 1.0);     // purple
+    } else if (v == 5u) {
+        return vec3(0.0, 1.0, 1.0);     // cyan
+    }
 }

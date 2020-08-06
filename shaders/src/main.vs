@@ -88,7 +88,7 @@ void main() {
 #endif
 
 #if defined(HAS_SHADOWING) && defined(HAS_DIRECTIONAL_LIGHTING)
-    vertex_lightSpacePosition = getLightSpacePosition(vertex_worldPosition, vertex_worldNormal,
+    vertex_lightSpacePosition = computeLightSpacePosition(vertex_worldPosition, vertex_worldNormal,
             frameUniforms.lightDirection, frameUniforms.shadowBias.y, getLightFromWorldMatrix());
 #endif
 
@@ -96,7 +96,7 @@ void main() {
     for (uint l = 0u; l < uint(MAX_SHADOW_CASTING_SPOTS); l++) {
         vec3 dir = shadowUniforms.directionShadowBias[l].xyz;
         float bias = shadowUniforms.directionShadowBias[l].w;
-        vertex_spotLightSpacePosition[l] = getLightSpacePosition(vertex_worldPosition,
+        vertex_spotLightSpacePosition[l] = computeLightSpacePosition(vertex_worldPosition,
                 vertex_worldNormal, dir, bias, getSpotLightFromWorldMatrix(l));
     }
 #endif
@@ -111,6 +111,9 @@ void main() {
 #ifdef MATERIAL_HAS_CLIP_SPACE_TRANSFORM
     gl_Position = getClipSpaceTransform(material) * gl_Position;
 #endif
+
+    // this must happen before we compensate for vulkan below
+    vertex_position = gl_Position;
 
 #if defined(TARGET_VULKAN_ENVIRONMENT)
     // In Vulkan, clip-space Z is [0,w] rather than [-w,+w] and Y is flipped.

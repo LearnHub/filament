@@ -48,7 +48,9 @@ class CommandBufferQueue {
     mutable std::vector<Slice> mCommandBuffersToExecute;
     size_t mFreeSpace = 0;
     size_t mHighWatermark = 0;
-    bool mExitRequested = false;
+    uint32_t mExitRequested = 0;
+
+    static constexpr uint32_t EXIT_REQUESTED = 0x31415926;
 
 public:
     // requiredSize: guaranteed available space after flush()
@@ -57,7 +59,7 @@ public:
 
     CircularBuffer& getCircularBuffer() { return mCircularBuffer; }
 
-    size_t getHigWatermark() noexcept { return mHighWatermark; }
+    size_t getHigWatermark() const noexcept { return mHighWatermark; }
 
     // wait for commands to be available and returns an array containing these commands
     std::vector<Slice> waitForCommands() const;
@@ -73,6 +75,8 @@ public:
 
     // returns from waitForCommands() immediately.
     void requestExit();
+
+    bool isExitRequested() const;
 };
 
 } // namespace backend

@@ -59,6 +59,21 @@ enum class Backend : uint8_t {
     NOOP = 4,     //!< Selects the no-op driver for testing purposes.
 };
 
+static constexpr const char* backendToString(backend::Backend backend) {
+    switch (backend) {
+        case backend::Backend::NOOP:
+            return "Noop";
+        case backend::Backend::OPENGL:
+            return "OpenGL";
+        case backend::Backend::VULKAN:
+            return "Vulkan";
+        case backend::Backend::METAL:
+            return "Metal";
+        default:
+            return "Unknown";
+    }
+}
+
 /**
  * Bitmask for selecting render buffers
  */
@@ -189,6 +204,7 @@ enum class SamplerType : uint8_t {
     SAMPLER_2D_ARRAY,   //!< 2D array texture
     SAMPLER_CUBEMAP,    //!< Cube map texture
     SAMPLER_EXTERNAL,   //!< External texture
+    SAMPLER_3D,         //!< 3D texture
 };
 
 //! Texture sampler format
@@ -267,7 +283,8 @@ enum class PixelDataType : uint8_t {
     FLOAT,                //!< float (32-bits float)
     COMPRESSED,           //!< compressed pixels, @see CompressedPixelDataType
     UINT_10F_11F_11F_REV, //!< three low precision floating-point numbers
-    USHORT_565            //!< unsigned int (16-bit), encodes 3 RGB channels
+    USHORT_565,           //!< unsigned int (16-bit), encodes 3 RGB channels
+    UINT_2_10_10_10_REV,  //!< unsigned normalized 10 bits RGB, 2 bits alpha
 };
 
 //! Compressed pixel data types
@@ -469,12 +486,13 @@ enum class TextureFormat : uint16_t {
 
 //! Bitmask describing the intended Texture Usage
 enum class TextureUsage : uint8_t {
-    COLOR_ATTACHMENT    = 0x1,  //!< Texture can be used as a color attachment
-    DEPTH_ATTACHMENT    = 0x2,  //!< Texture can be used as a depth attachment
-    STENCIL_ATTACHMENT  = 0x4,  //!< Texture can be used as a stencil attachment
-    UPLOADABLE          = 0x8,  //!< Data can be uploaded into this texture (default)
-    SAMPLEABLE          = 0x10, //!< Texture can be sampled (default)
-    DEFAULT = UPLOADABLE | SAMPLEABLE   //!< Default texture usage
+    COLOR_ATTACHMENT    = 0x1,                      //!< Texture can be used as a color attachment
+    DEPTH_ATTACHMENT    = 0x2,                      //!< Texture can be used as a depth attachment
+    STENCIL_ATTACHMENT  = 0x4,                      //!< Texture can be used as a stencil attachment
+    UPLOADABLE          = 0x8,                      //!< Data can be uploaded into this texture (default)
+    SAMPLEABLE          = 0x10,                     //!< Texture can be sampled (default)
+    SUBPASS_INPUT       = 0x20,                     //!< Texture can be used as a subpass input
+    DEFAULT             = UPLOADABLE | SAMPLEABLE   //!< Default texture usage
 };
 
 //! Texture swizzle
@@ -821,8 +839,15 @@ struct RenderPassParams {
     //! Stencil value to clear the stencil buffer with
     uint32_t clearStencil = 0;
 
-    //! reserved, must be zero
-    uint32_t reserved1 = 0;
+    /**
+     * The subpass mask specifies which color attachments are designated for read-back in the second
+     * subpass. If this is zero, the render pass has only one subpass. The least significant bit
+     * specifies that the first color attachment in the render target is a subpass input.
+     *
+     * For now only 2 subpasses are supported, so only the lower 4 bits are used, one for each color
+     * attachment (see MRT::TARGET_COUNT).
+     */
+    uint32_t subpassMask = 0;
 };
 
 struct PolygonOffset {

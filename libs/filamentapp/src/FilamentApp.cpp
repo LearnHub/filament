@@ -29,6 +29,7 @@
 
 #include <imgui.h>
 
+#include <utils/EntityManager.h>
 #include <utils/Panic.h>
 #include <utils/Path.h>
 
@@ -505,43 +506,55 @@ FilamentApp::Window::Window(FilamentApp* filamentApp,
     if (config.resizeable) {
         windowFlags |= SDL_WINDOW_RESIZABLE;
     }
-    mWindow = SDL_CreateWindow(title.c_str(), x, y, (int) w, (int) h, windowFlags);
 
-    // Create the Engine after the window in case this happens to be a single-threaded platform.
-    // For single-threaded platforms, we need to ensure that Filament's OpenGL context is current,
-    // rather than the one created by SDL.
-    mFilamentApp->mEngine = Engine::create(config.backend);
     mBackend = config.backend;
 
-    void* nativeWindow = ::getNativeWindow(mWindow);
-    void* nativeSwapChain = nativeWindow;
+    if (config.headless) {
+        mWindow = nullptr;
+        mFilamentApp->mEngine = Engine::create(config.backend);
+        mSwapChain = mFilamentApp->mEngine->createSwapChain((uint32_t) w, (uint32_t) h);
+        mWidth = w;
+        mHeight = h;
+    } else {
+        mWindow = SDL_CreateWindow(title.c_str(), x, y, (int) w, (int) h, windowFlags);
+
+        // Create the Engine after the window in case this happens to be a single-threaded platform.
+        // For single-threaded platforms, we need to ensure that Filament's OpenGL context is
+        // current, rather than the one created by SDL.
+        mFilamentApp->mEngine = Engine::create(config.backend);
+
+        void* nativeWindow = ::getNativeWindow(mWindow);
+        void* nativeSwapChain = nativeWindow;
 
 #if defined(__APPLE__)
 
-    void* metalLayer = nullptr;
-    if (config.backend == filament::Engine::Backend::METAL) {
-        metalLayer = setUpMetalLayer(nativeWindow);
-        // The swap chain on Metal is a CAMetalLayer.
-        nativeSwapChain = metalLayer;
-    }
+        void* metalLayer = nullptr;
+        if (config.backend == filament::Engine::Backend::METAL) {
+            metalLayer = setUpMetalLayer(nativeWindow);
+            // The swap chain on Metal is a CAMetalLayer.
+            nativeSwapChain = metalLayer;
+        }
 
 #if defined(FILAMENT_DRIVER_SUPPORTS_VULKAN)
-    if (config.backend == filament::Engine::Backend::VULKAN) {
-        // We request a Metal layer for rendering via MoltenVK.
-        setUpMetalLayer(nativeWindow);
+        if (config.backend == filament::Engine::Backend::VULKAN) {
+            // We request a Metal layer for rendering via MoltenVK.
+            setUpMetalLayer(nativeWindow);
+        }
+#endif
+
+#endif
+
+        mSwapChain = mFilamentApp->mEngine->createSwapChain(nativeSwapChain);
     }
-#endif
-
-#endif
-
-    mSwapChain = mFilamentApp->mEngine->createSwapChain(nativeSwapChain);
     mRenderer = mFilamentApp->mEngine->createRenderer();
 
     // create cameras
-    mCameras[0] = mMainCamera = mFilamentApp->mEngine->createCamera();
-    mCameras[1] = mDebugCamera = mFilamentApp->mEngine->createCamera();
-    mCameras[2] = mOrthoCamera = mFilamentApp->mEngine->createCamera();
-    mCameras[3] = mUiCamera = mFilamentApp->mEngine->createCamera();
+    utils::EntityManager& em = utils::EntityManager::get();
+    em.create(4, mCameraEntities);
+    mCameras[0] = mMainCamera = mFilamentApp->mEngine->createCamera(mCameraEntities[0]);
+    mCameras[1] = mDebugCamera = mFilamentApp->mEngine->createCamera(mCameraEntities[1]);
+    mCameras[2] = mOrthoCamera = mFilamentApp->mEngine->createCamera(mCameraEntities[2]);
+    mCameras[3] = mUiCamera = mFilamentApp->mEngine->createCamera(mCameraEntities[3]);
 
     // set exposure
     for (auto camera : mCameras) {
@@ -592,8 +605,10 @@ FilamentApp::Window::Window(FilamentApp* filamentApp,
 
 FilamentApp::Window::~Window() {
     mViews.clear();
-    for (auto& camera : mCameras) {
-        mFilamentApp->mEngine->destroy(camera);
+    utils::EntityManager& em = utils::EntityManager::get();
+    for (auto e : mCameraEntities) {
+        mFilamentApp->mEngine->destroyCameraComponent(e);
+        em.destroy(e);
     }
     mFilamentApp->mEngine->destroy(mRenderer);
     mFilamentApp->mEngine->destroy(mSwapChain);
@@ -694,17 +709,12 @@ void FilamentApp::Window::fixupMouseCoordinatesForHdpi(ssize_t& x, ssize_t& y) c
 }
 
 void FilamentApp::Window::resize() {
-    mFilamentApp->mEngine->destroy(mSwapChain);
     void* nativeWindow = ::getNativeWindow(mWindow);
-    void* nativeSwapChain = nativeWindow;
 
 #if defined(__APPLE__)
 
-    void* metalLayer = nullptr;
     if (mBackend == filament::Engine::Backend::METAL) {
-        metalLayer = resizeMetalLayer(nativeWindow);
-        // The swap chain on Metal is a CAMetalLayer.
-        nativeSwapChain = metalLayer;
+        resizeMetalLayer(nativeWindow);
     }
 
 #if defined(FILAMENT_DRIVER_SUPPORTS_VULKAN)
@@ -715,23 +725,34 @@ void FilamentApp::Window::resize() {
 
 #endif
 
-    mSwapChain = mFilamentApp->mEngine->createSwapChain(nativeSwapChain);
     configureCamerasForWindow();
+
+    // Call the resize callback, if this FilamentApp has one. This must be done after
+    // configureCamerasForWindow, so the viewports are correct.
+    if (mFilamentApp->mResize) {
+        mFilamentApp->mResize(mFilamentApp->mEngine, mMainView->getView());
+    }
 }
 
 void FilamentApp::Window::configureCamerasForWindow() {
-    // Determine the current size of the window in physical pixels.
-    uint32_t width, height;
-    SDL_GL_GetDrawableSize(mWindow, (int*) &width, (int*) &height);
-    mWidth = (size_t) width;
-    mHeight = (size_t) height;
+    float dpiScaleX = 1.0f;
+    float dpiScaleY = 1.0f;
 
-    // Compute the "virtual pixels to physical pixels" scale factor that the
-    // the platform uses for UI elements.
-    int virtualWidth, virtualHeight;
-    SDL_GetWindowSize(mWindow, &virtualWidth, &virtualHeight);
-    float dpiScaleX = (float) width / virtualWidth;
-    float dpiScaleY = (float) height / virtualHeight;
+    // If the app is not headless, query the window for its physical & virtual sizes.
+    if (mWindow) {
+        uint32_t width, height;
+        SDL_GL_GetDrawableSize(mWindow, (int*) &width, (int*) &height);
+        mWidth = (size_t) width;
+        mHeight = (size_t) height;
+
+        int virtualWidth, virtualHeight;
+        SDL_GetWindowSize(mWindow, &virtualWidth, &virtualHeight);
+        dpiScaleX = (float) width / virtualWidth;
+        dpiScaleY = (float) height / virtualHeight;
+    }
+
+    const uint32_t width = mWidth;
+    const uint32_t height = mHeight;
 
     const float3 at(0, 0, -4);
     const double ratio = double(height) / double(width);
@@ -813,16 +834,22 @@ void FilamentApp::CView::mouseWheel(ssize_t x) {
 bool FilamentApp::manipulatorKeyFromKeycode(SDL_Scancode scancode, CameraManipulator::Key& key) {
     switch (scancode) {
         case SDL_SCANCODE_W:
-            key = CameraManipulator::Key::UP;
+            key = CameraManipulator::Key::FORWARD;
             return true;
         case SDL_SCANCODE_A:
             key = CameraManipulator::Key::LEFT;
             return true;
         case SDL_SCANCODE_S:
-            key = CameraManipulator::Key::DOWN;
+            key = CameraManipulator::Key::BACKWARD;
             return true;
         case SDL_SCANCODE_D:
             key = CameraManipulator::Key::RIGHT;
+            return true;
+        case SDL_SCANCODE_E:
+            key = CameraManipulator::Key::UP;
+            return true;
+        case SDL_SCANCODE_Q:
+            key = CameraManipulator::Key::DOWN;
             return true;
         default:
             return false;

@@ -69,6 +69,7 @@ public class MaterialBuilder {
         SAMPLER_2D_ARRAY,       // 2D array texture
         SAMPLER_CUBEMAP,        // Cube map texture
         SAMPLER_EXTERNAL,       // External texture
+        SAMPLER_3D              // 3D texture
     }
 
     public enum SamplerFormat {
@@ -415,7 +416,7 @@ public class MaterialBuilder {
     }
 
     @NonNull
-    public MaterialBuilder variantFilter(byte variantFilter) {
+    public MaterialBuilder variantFilter(int variantFilter) {
         nMaterialBuilderVariantFilter(mNativeObject, variantFilter);
         return this;
     }
@@ -506,5 +507,5 @@ public class MaterialBuilder {
     private static native void nMaterialBuilderTargetApi(long nativeBuilder, int api);
     private static native void nMaterialBuilderOptimization(long nativeBuilder, int optimization);
     private static native void nMaterialBuilderVariantFilter(long nativeBuilder,
-            byte variantFilter);
+            int variantFilter);
 }

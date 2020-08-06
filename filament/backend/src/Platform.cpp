@@ -16,6 +16,8 @@
 
 #include <backend/Platform.h>
 
+#include <utils/Systrace.h>
+
 #if defined(ANDROID)
     #ifndef FILAMENT_USE_EXTERNAL_GLES3
         #include "opengl/PlatformEGLAndroid.h"
@@ -23,6 +25,8 @@
     #if defined (FILAMENT_DRIVER_SUPPORTS_VULKAN)
         #include "vulkan/PlatformVkAndroid.h"
     #endif
+#elif defined(SWIFTSHADER)
+    #include "opengl/PlatformEGL.h"
 #elif defined(IOS)
     #ifndef FILAMENT_USE_EXTERNAL_GLES3
         #include "opengl/PlatformCocoaTouchGL.h"
@@ -75,6 +79,7 @@ Platform::~Platform() noexcept = default;
 // responsible for destroying it. Initialization of the backend API is deferred until
 // createDriver(). The passed-in backend hint is replaced with the resolved backend.
 DefaultPlatform* DefaultPlatform::create(Backend* backend) noexcept {
+    SYSTRACE_CALL();
     assert(backend);
     if (*backend == Backend::DEFAULT) {
         *backend = Backend::OPENGL;
@@ -110,7 +115,7 @@ DefaultPlatform* DefaultPlatform::create(Backend* backend) noexcept {
     }
     #if defined(FILAMENT_USE_EXTERNAL_GLES3)
         return nullptr;
-    #elif defined(EGL) && !defined(ANDROID)
+    #elif defined(SWIFTSHADER)
         return new PlatformEGL();
     #elif defined(ANDROID)
         return new PlatformEGLAndroid();

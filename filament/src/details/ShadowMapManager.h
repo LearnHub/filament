@@ -24,18 +24,20 @@
 #include <private/backend/SamplerGroup.h>
 #include <private/backend/SamplerGroup.h>
 
+#include <private/filament/EngineEnums.h>
+
 #include <backend/DriverEnums.h>
 #include <backend/Handle.h>
 
 #include <math/vec3.h>
 
+#include <array>
+#include <memory>
 #include <vector>
 
 namespace filament {
 
 class FView;
-
-namespace details {
 
 class ShadowMap;
 class RenderPass;
@@ -43,7 +45,7 @@ class RenderPass;
 class ShadowMapManager {
 public:
 
-    ShadowMapManager();
+    ShadowMapManager(FEngine& engine);
     ~ShadowMapManager();
 
     void terminate(backend::DriverApi& driverApi) noexcept;
@@ -51,8 +53,8 @@ public:
     // Reset shadow map layout.
     void reset() noexcept;
 
-    void setDirectionalShadowMap(ShadowMap& shadowMap, size_t lightIndex) noexcept;
-    void addSpotShadowMap(ShadowMap& shadowMap, size_t lightIndex) noexcept;
+    void setShadowCascades(size_t lightIndex, size_t cascades) noexcept;
+    void addSpotShadowMap(size_t lightIndex) noexcept;
 
     // Allocates shadow texture based on the shadows maps and their requirements.
     void prepare(FEngine& engine, backend::DriverApi& driver, backend::SamplerGroup& samplerGroup,
@@ -66,8 +68,16 @@ public:
     // Renders all of the shadow maps.
     void render(FEngine& engine, FView& view, backend::DriverApi& driver, RenderPass& pass) noexcept;
 
+    const ShadowMap* getCascadeShadowMap(size_t c) const noexcept {
+        return mCascadeShadowMapCache[c].get();
+    }
+
 private:
 
+    bool updateCascadeShadowMaps(FEngine& engine, FView& view, UniformBuffer& perViewUb,
+            FScene::RenderableSoa& renderableData, FScene::LightSoa& lightData) noexcept;
+    bool updateSpotShadowMaps(FEngine& engine, FView& view, UniformBuffer& shadowUb,
+            FScene::RenderableSoa& renderableData, FScene::LightSoa& lightData) noexcept;
     void fillWithDebugPattern(backend::DriverApi& driverApi,
             backend::Handle<backend::HwTexture> texture) const noexcept;
     void destroyResources(backend::DriverApi& driver) noexcept;
@@ -114,6 +124,45 @@ private:
         }
     } mTextureState;
 
+    class CascadeSplits {
+    public:
+        constexpr static size_t SPLIT_COUNT = CONFIG_MAX_SHADOW_CASCADES + 1;
+
+        struct Params {
+            math::mat4f proj = {};
+            float near = 0.0f;
+            float far = 0.0f;
+            size_t cascadeCount = 1;
+            std::array<float, SPLIT_COUNT> splitPositions = { 0.0f };
+
+            bool operator!=(const Params& rhs) const {
+                return proj != rhs.proj ||
+                       near != rhs.near ||
+                       far != rhs.far ||
+                       cascadeCount != rhs.cascadeCount ||
+                       splitPositions != rhs.splitPositions;
+            }
+        };
+
+        CascadeSplits() : CascadeSplits(Params {}) {}
+        CascadeSplits(Params p);
+
+        // Split positions in world-space.
+        const float* beginWs() const { return mSplitsWs; }
+        const float* endWs() const { return mSplitsWs + mSplitCount; }
+
+        // Split positions in clip-space.
+        const float* beginCs() const { return mSplitsCs; }
+        const float* endCs() const { return mSplitsCs + mSplitCount; }
+
+    private:
+        float mSplitsWs[SPLIT_COUNT];
+        float mSplitsCs[SPLIT_COUNT];
+        size_t mSplitCount;
+
+    } mCascadeSplits;
+    CascadeSplits::Params mCascadeSplitParams;
+
     // 16-bits seems enough.
     // TODO: make it an option.
     // TODO: iOS does not support the DEPTH16 texture format.
@@ -122,11 +171,13 @@ private:
 
     backend::Handle<backend::HwTexture> mShadowMapTexture;
     std::vector<backend::Handle<backend::HwRenderTarget>> mRenderTargets;
-    ShadowMapEntry mDirectionalShadowMap;
+    std::vector<ShadowMapEntry> mCascadeShadowMaps;
     std::vector<ShadowMapEntry> mSpotShadowMaps;
+
+    std::array<std::unique_ptr<ShadowMap>, CONFIG_MAX_SHADOW_CASCADES> mCascadeShadowMapCache;
+    std::array<std::unique_ptr<ShadowMap>, CONFIG_MAX_SHADOW_CASTING_SPOTS> mSpotShadowMapCache;
 };
 
-}
-}
+} // namespace filament
 
 #endif //TNT_FILAMENT_DETAILS_SHADOWMAPMANAGER_H

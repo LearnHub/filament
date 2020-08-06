@@ -64,6 +64,10 @@ io::sstream& CodeGenerator::generateProlog(io::sstream& out, ShaderType type,
             break;
     }
 
+    // This allows our includer system to use the #line directive to denote the source file for
+    // #included code. This way, glslang reports errors more accurately.
+    out << "#extension GL_GOOGLE_cpp_style_line_directive : enable\n\n";
+
     if (mTargetApi == TargetApi::VULKAN) {
         out << "#define TARGET_VULKAN_ENVIRONMENT\n";
     }
@@ -113,7 +117,6 @@ io::sstream& CodeGenerator::generateEpilog(io::sstream& out) const {
 
 io::sstream& CodeGenerator::generateShaderMain(io::sstream& out, ShaderType type) const {
     if (type == ShaderType::VERTEX) {
-        out << SHADERS_SHADOWING_VS_DATA;
         out << SHADERS_MAIN_VS_DATA;
     } else if (type == ShaderType::FRAGMENT) {
         out << SHADERS_MAIN_FS_DATA;
@@ -211,6 +214,30 @@ io::sstream& CodeGenerator::generateShaderInputs(io::sstream& out, ShaderType ty
     }
     return out;
 }
+
+utils::io::sstream& CodeGenerator::generateOutput(utils::io::sstream& out, ShaderType type,
+        const utils::CString& name, size_t index,
+        MaterialBuilder::VariableQualifier qualifier,
+        MaterialBuilder::OutputType outputType) const {
+    if (name.empty() || type == ShaderType::VERTEX) {
+        return out;
+    }
+
+    // TODO: add and support additional variable qualifiers
+    (void) qualifier;
+    assert(qualifier == MaterialBuilder::VariableQualifier::OUT);
+
+    const char* typeString = getOutputTypeName(outputType);
+
+    out << "\n#define FRAG_OUTPUT" << index << " " << name.c_str() << "\n";
+    out << "\n#define FRAG_OUTPUT_AT" << index << " output_" << name.c_str() << "\n";
+    out << "\n#define FRAG_OUTPUT_TYPE" << index << " " << typeString << "\n";
+    out << "LAYOUT_LOCATION(" << index << ") out " << typeString <<
+        " output_" << name.c_str() << ";\n";
+
+    return out;
+}
+
 
 io::sstream& CodeGenerator::generateDepthShaderMain(io::sstream& out, ShaderType type) const {
     if (type == ShaderType::VERTEX) {
@@ -391,6 +418,7 @@ io::sstream& CodeGenerator::generateMaterialProperty(io::sstream& out,
 
 io::sstream& CodeGenerator::generateCommon(io::sstream& out, ShaderType type) const {
     out << SHADERS_COMMON_MATH_FS_DATA;
+    out << SHADERS_COMMON_SHADOWING_FS_DATA;
     if (type == ShaderType::VERTEX) {
     } else if (type == ShaderType::FRAGMENT) {
         out << SHADERS_COMMON_SHADING_FS_DATA;
@@ -565,6 +593,16 @@ char const* CodeGenerator::getUniformTypeName(UniformInterfaceBlock::Type type) 
     }
 }
 
+char const* CodeGenerator::getOutputTypeName(MaterialBuilder::OutputType type) noexcept {
+    using Type = UniformInterfaceBlock::Type;
+    switch (type) {
+        case MaterialBuilder::OutputType::FLOAT:  return "float";
+        case MaterialBuilder::OutputType::FLOAT2: return "float2";
+        case MaterialBuilder::OutputType::FLOAT3: return "float3";
+        case MaterialBuilder::OutputType::FLOAT4: return "float4";
+    }
+}
+
 char const* CodeGenerator::getSamplerTypeName(SamplerType type, SamplerFormat format,
         bool multisample) const noexcept {
     assert(!multisample);   // multisample samplers not yet supported.
@@ -575,6 +613,14 @@ char const* CodeGenerator::getSamplerTypeName(SamplerType type, SamplerFormat fo
                 case SamplerFormat::UINT:   return "usampler2D";
                 case SamplerFormat::FLOAT:  return "sampler2D";
                 case SamplerFormat::SHADOW: return "sampler2DShadow";
+            }
+        case SamplerType::SAMPLER_3D:
+            assert(format != SamplerFormat::SHADOW);
+            switch (format) {
+                case SamplerFormat::INT:    return "isampler3D";
+                case SamplerFormat::UINT:   return "usampler3D";
+                case SamplerFormat::FLOAT:  return "sampler3D";
+                case SamplerFormat::SHADOW: return nullptr;
             }
         case SamplerType::SAMPLER_2D_ARRAY:
             switch (format) {

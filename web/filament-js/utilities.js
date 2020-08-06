@@ -82,7 +82,7 @@ Filament.CompressedPixelBuffer = function(typedarray, cdatatype, faceSize) {
 Filament._loadFilamesh = function(engine, buffer, definstance, matinstances) {
     matinstances = matinstances || {};
     const registry = new Filament.MeshReader$MaterialRegistry();
-    for (var key in matinstances) {
+    for (let key in matinstances) {
         registry.set(key, matinstances[key]);
     }
     if (definstance) {
@@ -90,7 +90,7 @@ Filament._loadFilamesh = function(engine, buffer, definstance, matinstances) {
     }
     const mesh = Filament.MeshReader.loadMeshFromBuffer(engine, buffer, registry);
     const keys = registry.keys();
-    for (var i = 0; i < keys.size(); i++) {
+    for (let i = 0; i < keys.size(); i++) {
         const key = keys.get(i);
         const minstance = registry.get(key);
         matinstances[key] = minstance;
@@ -132,34 +132,25 @@ Filament.IcoSphere = function(nsubdivs) {
         3,  10, 7, 10,  6,  7, 6,  11, 7, 6, 0,  11 ,  6,  1,  0 ,
         10,   1, 6, 11,  0,  9, 2,  11, 9, 5, 2,   9 , 11,  2,  7 ,
     ]);
-    if (nsubdivs) {
-        while (nsubdivs-- > 0) {
-            this.subdivide();
-        }
+
+    nsubdivs = nsubdivs || 0;
+    while (nsubdivs-- > 0) {
+        this.subdivide();
     }
+
     const nverts = this.vertices.length / 3;
 
-    // Allocate room for normals in the heap, and copy position data into it (yay for unit spheres)
-    const normals = Filament._malloc(this.vertices.length * this.vertices.BYTES_PER_ELEMENT);
-    Module.HEAPU8.set(new Uint8Array(this.vertices.buffer), normals);
+    // This is a unit sphere, so normals = positions.
+    const normals = this.vertices;
 
-    // Perform computations, then free up the normals.
+    // Perform computations.
     const sob = new Filament.SurfaceOrientation$Builder();
     sob.vertexCount(nverts);
     sob.normals(normals, 0)
     const orientation = sob.build();
 
-    Filament._free(normals);
-
-    // Allocate room for quaternions then populate it.
-    const quatsBufferSize = 8 * nverts;
-    const quatsBuffer = Filament._malloc(quatsBufferSize);
-    orientation.getQuats(quatsBuffer, nverts, Filament.VertexBuffer$AttributeType.SHORT4);
-
-    // Create a JavaScript typed array and copy the quat data into it.
-    const tangentsMemory = Module.HEAPU8.subarray(quatsBuffer, quatsBuffer + quatsBufferSize).slice().buffer;
-    Filament._free(quatsBuffer);
-    this.tangents = new Int16Array(tangentsMemory);
+    // Copy the results out of the helper.
+    this.tangents = orientation.getQuats(nverts);
 
     // Free up the surface orientation helper now that we're done with it.
     orientation.delete();
@@ -175,8 +166,8 @@ Filament.IcoSphere.prototype.subdivide = function() {
     const dsttris = new Uint16Array(ndsttris * 3);
     const dstverts = new Float32Array(ndstverts * 3);
     dstverts.set(srcverts);
-    var srcind = 0, dstind = 0, i3 = nsrcverts * 3, i4 = i3 + 3, i5 = i4 + 3;
-    for (var tri = 0; tri < nsrctris; tri++, i3 += 9, i4 += 9, i5 += 9) {
+    let srcind = 0, dstind = 0, i3 = nsrcverts * 3, i4 = i3 + 3, i5 = i4 + 3;
+    for (let tri = 0; tri < nsrctris; tri++, i3 += 9, i4 += 9, i5 += 9) {
         const i0 = srctris[srcind++] * 3;
         const i1 = srctris[srcind++] * 3;
         const i2 = srctris[srcind++] * 3;
@@ -288,7 +279,7 @@ Filament._createTextureFromImageFile = function(fileContents, engine, options) {
 
     const decodedImage = Filament.decodeImage(fileContents, noalpha ? 3 : 4);
 
-    var texformat, pbformat, pbtype;
+    let texformat, pbformat, pbtype;
     if (noalpha) {
         texformat = srgb ? TextureFormat.SRGB8 : TextureFormat.RGB8;
         pbformat = PixelDataFormat.RGB;
@@ -322,15 +313,15 @@ Filament.getSupportedFormats = function() {
         return Filament.supportedFormats;
     }
     const options = { majorVersion: 2, minorVersion: 0 };
-    var ctx = document.createElement('canvas').getContext('webgl2', options);
+    let ctx = document.createElement('canvas').getContext('webgl2', options);
     const result = {
         s3tc: false,
         astc: false,
         etc: false,
     }
-    var exts = ctx.getSupportedExtensions(), nexts = exts.length, i;
+    let exts = ctx.getSupportedExtensions(), nexts = exts.length, i;
     for (i = 0; i < nexts; i++) {
-        var ext = exts[i];
+        let ext = exts[i];
         if (ext == "WEBGL_compressed_texture_s3tc") {
             result.s3tc = true;
         } else if (ext == "WEBGL_compressed_texture_astc") {
@@ -350,8 +341,8 @@ Filament.getSupportedFormats = function() {
 /// ::retval:: empty string if there is no intersection of supported and desired formats.
 Filament.getSupportedFormatSuffix = function(desiredFormats) {
     desiredFormats = desiredFormats.split(' ');
-    var exts = Filament.getSupportedFormats();
-    for (var key in exts) {
+    let exts = Filament.getSupportedFormats();
+    for (let key in exts) {
         if (exts[key] && desiredFormats.includes(key)) {
             return '_' + key;
         }

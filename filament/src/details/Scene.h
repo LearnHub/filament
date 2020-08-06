@@ -39,7 +39,6 @@
 #include <tsl/robin_set.h>
 
 namespace filament {
-namespace details {
 
 struct CameraInfo;
 class FEngine;
@@ -65,6 +64,7 @@ public:
     void addEntity(utils::Entity entity);
     void addEntities(const utils::Entity* entities, size_t count);
     void remove(utils::Entity entity);
+    void removeEntities(const utils::Entity* entities, size_t count);
 
     size_t getRenderableCount() const noexcept;
     size_t getLightCount() const noexcept;
@@ -233,7 +233,6 @@ private:
 
 FILAMENT_UPCAST(Scene)
 
-} // namespace details
 } // namespace filament
 
 #endif // TNT_FILAMENT_DETAILS_SCENE_H

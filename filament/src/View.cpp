@@ -21,7 +21,6 @@
 #include "details/DFG.h"
 #include "details/Froxelizer.h"
 #include "details/IndirectLight.h"
-#include "details/MaterialInstance.h"
 #include "details/Renderer.h"
 #include "details/RenderTarget.h"
 #include "details/Scene.h"
@@ -33,7 +32,6 @@
 #include <private/filament/SibGenerator.h>
 #include <private/filament/UibGenerator.h>
 
-#include <utils/Allocator.h>
 #include <utils/Profiler.h>
 #include <utils/Slice.h>
 #include <utils/Systrace.h>
@@ -44,7 +42,6 @@
 #include <memory>
 #include <filament/View.h>
 
-
 using namespace filament::math;
 using namespace utils;
 
@@ -52,19 +49,13 @@ namespace filament {
 
 using namespace backend;
 
-namespace details {
-
 FView::FView(FEngine& engine)
     : mFroxelizer(engine),
       mPerViewUb(PerViewUib::getUib().getSize()),
       mShadowUb(ShadowUib::getUib().getSize()),
       mPerViewSb(PerViewSib::SAMPLER_COUNT),
-      mDirectionalShadowMap(engine) {
+      mShadowMapManager(engine) {
     DriverApi& driver = engine.getDriverApi();
-
-    for (size_t i = 0; i < CONFIG_MAX_SHADOW_CASTING_SPOTS; i++) {
-        mSpotShadowMap[i] = std::make_unique<ShadowMap>(engine);
-    }
 
     FDebugRegistry& debugRegistry = engine.getDebugRegistry();
     debugRegistry.registerProperty("d.view.camera_at_origin",
@@ -86,6 +77,8 @@ FView::FView(FEngine& engine)
     mShadowUbh = driver.createUniformBuffer(mShadowUb.getSize(), backend::BufferUsage::DYNAMIC);
 
     mIsDynamicResolutionSupported = driver.isFrameTimeSupported();
+
+    mDefaultColorGrading = mColorGrading = engine.getDefaultColorGrading();
 }
 
 FView::~FView() noexcept = default;
@@ -227,7 +220,10 @@ void FView::prepareShadowing(FEngine& engine, backend::DriverApi& driver,
     FLightManager::Instance directionalLight = lightData.elementAt<FScene::LIGHT_INSTANCE>(0);
     const bool hasDirectionalShadows = directionalLight && lcm.isShadowCaster(directionalLight);
     if (UTILS_UNLIKELY(hasDirectionalShadows)) {
-        mShadowMapManager.setDirectionalShadowMap(mDirectionalShadowMap, 0);
+        const auto& shadowOptions = lcm.getShadowOptions(directionalLight);
+        assert(shadowOptions.shadowCascades >= 1 &&
+                shadowOptions.shadowCascades <= CONFIG_MAX_SHADOW_CASCADES);
+        mShadowMapManager.setShadowCascades(0, shadowOptions.shadowCascades);
     }
 
     // Find all shadow-casting spot lights.
@@ -246,8 +242,7 @@ void FView::prepareShadowing(FEngine& engine, backend::DriverApi& driver,
             continue;
         }
 
-        ShadowMap& shadowMap = *mSpotShadowMap[shadowCastingSpotCount];
-        mShadowMapManager.addSpotShadowMap(shadowMap, l);
+        mShadowMapManager.addSpotShadowMap(l);
 
         shadowCastingSpotCount++;
         if (shadowCastingSpotCount > CONFIG_MAX_SHADOW_CASTING_SPOTS - 1) {
@@ -486,17 +481,20 @@ void FView::prepare(FEngine& engine, backend::DriverApi& driver, ArenaScope& are
 
         // update those UBOs
         const size_t size = merged.size() * sizeof(PerRenderableUib);
-        if (mRenderableUBOSize < size) {
-            // allocate 1/3 extra, with a minimum of 16 objects
-            const size_t count = std::max(size_t(16u), (4u * merged.size() + 2u) / 3u);
-            mRenderableUBOSize = uint32_t(count * sizeof(PerRenderableUib));
-            driver.destroyUniformBuffer(mRenderableUbh);
-            mRenderableUbh = driver.createUniformBuffer(mRenderableUBOSize,
-                    backend::BufferUsage::STREAM);
-        } else {
-            // TODO: should we shrink the underlying UBO at some point?
+        if (size) {
+            if (mRenderableUBOSize < size) {
+                // allocate 1/3 extra, with a minimum of 16 objects
+                const size_t count = std::max(size_t(16u), (4u * merged.size() + 2u) / 3u);
+                mRenderableUBOSize = uint32_t(count * sizeof(PerRenderableUib));
+                driver.destroyUniformBuffer(mRenderableUbh);
+                mRenderableUbh = driver.createUniformBuffer(mRenderableUBOSize,
+                        backend::BufferUsage::STREAM);
+            } else {
+                // TODO: should we shrink the underlying UBO at some point?
+            }
+            assert(mRenderableUbh);
+            scene->updateUBOs(merged, mRenderableUbh);
         }
-        scene->updateUBOs(merged, mRenderableUbh);
     }
 
     /*
@@ -633,9 +631,18 @@ void FView::prepareViewport(const filament::Viewport &viewport) const noexcept {
 }
 
 void FView::prepareSSAO(Handle<HwTexture> ssao) const noexcept {
+    // High quality sampling is enabled only if AO itself is enabled and upsampling quality is at
+    // least set to high and of course only if upsampling is needed.
+    const bool highQualitySampling = mAmbientOcclusionOptions.upsampling >= QualityLevel::HIGH
+            && mAmbientOcclusionOptions.resolution < 1.0f;
+
+    // LINEAR filtering is only needed when AO is enabled and low-quality upsampling is used.
     mPerViewSb.setSampler(PerViewSib::SSAO, ssao, {
-            .filterMag = SamplerMagFilter::LINEAR
+            .filterMag = mAmbientOcclusion != AmbientOcclusion::NONE && !highQualitySampling ?
+                         SamplerMagFilter::LINEAR : SamplerMagFilter::NEAREST
     });
+    mPerViewUb.setUniform(offsetof(PerViewUib, aoSamplingQuality),
+            mAmbientOcclusion != AmbientOcclusion::NONE && highQualitySampling ? 1.0f : 0.0f);
 }
 
 void FView::prepareSSR(backend::Handle<backend::HwTexture> ssr, float refractionLodOffset) const noexcept {
@@ -793,13 +800,9 @@ void FView::renderShadowMaps(FEngine& engine, FEngine::DriverApi& driver, Render
     mShadowMapManager.render(engine, *this, driver, pass);
 }
 
-} // namespace details
-
 // ------------------------------------------------------------------------------------------------
 // Trampoline calling into private implementation
 // ------------------------------------------------------------------------------------------------
-
-using namespace details;
 
 void View::setScene(Scene* scene) {
     return upcast(this)->setScene(upcast(scene));
@@ -817,7 +820,6 @@ void View::setCamera(Camera* camera) noexcept {
 Camera& View::getCamera() noexcept {
     return upcast(this)->getCameraUser();
 }
-
 
 void View::setViewport(filament::Viewport const& viewport) noexcept {
     upcast(this)->setViewport(viewport);
@@ -891,6 +893,14 @@ View::ToneMapping View::getToneMapping() const noexcept {
     return upcast(this)->getToneMapping();
 }
 
+void View::setColorGrading(ColorGrading* colorGrading) noexcept {
+    return upcast(this)->setColorGrading(upcast(colorGrading));
+}
+
+const ColorGrading* View::getColorGrading() const noexcept {
+    return upcast(this)->getColorGrading();
+}
+
 void View::setDithering(Dithering dithering) noexcept {
     upcast(this)->setDithering(dithering);
 }
@@ -955,16 +965,32 @@ void View::setBloomOptions(View::BloomOptions options) noexcept {
     upcast(this)->setBloomOptions(options);
 }
 
+View::BloomOptions View::getBloomOptions() const noexcept {
+    return upcast(this)->getBloomOptions();
+}
+
 void View::setFogOptions(View::FogOptions options) noexcept {
     upcast(this)->setFogOptions(options);
+}
+
+View::FogOptions View::getFogOptions() const noexcept {
+    return upcast(this)->getFogOptions();
 }
 
 void View::setDepthOfFieldOptions(DepthOfFieldOptions options) noexcept {
     upcast(this)->setDepthOfFieldOptions(options);
 }
 
-View::BloomOptions View::getBloomOptions() const noexcept {
-    return upcast(this)->getBloomOptions();
+View::DepthOfFieldOptions View::getDepthOfFieldOptions() const noexcept {
+    return upcast(this)->getDepthOfFieldOptions();
+}
+
+void View::setVignetteOptions(View::VignetteOptions options) noexcept {
+    upcast(this)->setVignetteOptions(options);
+}
+
+View::VignetteOptions View::getVignetteOptions() const noexcept {
+    return upcast(this)->getVignetteOptions();
 }
 
 void View::setBlendMode(BlendMode blendMode) noexcept {
@@ -975,4 +1001,8 @@ View::BlendMode View::getBlendMode() const noexcept {
     return upcast(this)->getBlendMode();
 }
 
+uint8_t View::getVisibleLayers() const noexcept {
+  return upcast(this)->getVisibleLayers();
+}
+  
 } // namespace filament

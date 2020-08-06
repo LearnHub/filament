@@ -5,6 +5,77 @@ A new header is inserted each time a *tag* is created.
 
 ## Next release
 
+## v1.8.1
+
+- New CocoaPods sample for iOS.
+- Filament for iOS now supports iOS 11.
+- Updated the Emscripten SDK to 1.39.19.
+- Fixed skinning issue with Emscripten.
+- JavaScript APIs for color grading and the vignette effect.
+- Added various missing APIs to Java and JavaScript bindings.
+- Fixed camera aspect ratio when loading a camera from a glTF file.
+- gltfio now uses specular anti-aliasing by default.
+- gltfio now supports the KHR_materials_transmission extension.
+- Compiled materials do not perform unnecessary fp32 operations anymore.
+- Improved quality and performance of the depth of field effect.
+- Fixed transform hierarchy memory corruption when a node is set to be parentless.
+- Fixed crashed in some browsers and on some mobile devices caused by
+  Google-style line directives in shaders.
+- Color grading now has a quality option which affects the size and bit depth of the 3D LUT.
+- Fixed crash in the Metal backend when more than 16 samplers are bound.
+- Added validation in Texture::setImage().
+- Fixed refraction/transmission roughness when specular anti-aliasing is enabled.
+
+## v1.8.0
+
+- Improved JavaScript API for SurfaceOrientation and Scene.
+- Updated JavaScript API around Camera construction / destruction (⚠️ **API change**)
+- Add missing JavaScript API for `View::setVisibleLayers()`.
+- Fixed regression in JavaScript IcoSphere that caused tutorial to fail.
+- gltf_viewer now supports viewing with glTF cameras.
+- gltfio now uses high precision for texture coordinates.
+- gltfio now supports importing glTF cameras.
+- gltfio now supports simple instancing of entire assets.
+- gltfio has improved performance and assumes assets are well-formed.
+- gltfio now supports name and prefix lookup for entities.
+- ModelViewer now allows resources to be fetched off the UI thread.
+- Add support for DOF with Metal backend.
+- New Depth-of-Field (Dof) algorithm, which is more plausible and about an order of magnitude faster
+  (about 4ms on Pixel4).
+- SSAO now has an optional high(er) quality upsampler.
+- Tone mappping now uses the real ACES tone mapper, applied in the proper color space.
+- Tone mapping is now applied via a LUT.
+- `View::setToneMapping` is deprecated, use `View::setColorGrading` instead. (⚠️ **API change**)
+- Color grading capabilities per View: white balance (temperature/tint), channel mixer,
+  tonal ranges (shadows/mid-tones/highlights), ASC CDL (slope/offset/power), contrast, vibrance,
+  saturation, and curves.
+- New vignette effect.
+- Improved MSAA performance on mobile.
+- Improved performance of the post-process pass when bloom is disabled on mobile.
+- Added support for 3D textures.
+- Fixed private API access on some versions of Android.
+- Many improvements and bug fixes in Metal and Vulkan backends.
+- Fixed bug in the Metal backend when SSR and MSAA were turned on.
+- Fixed Metal issue with `BufferDescriptor` and `PixelBufferDescriptor`s not being called on
+  the application thread.
+
+## v1.7.0
+
+- MaterialInstances now have optional names.
+- Improved Depth of Field effect: bokeh rotates with the aperture diameter, improved CoC calculation, feather blur radius.
+- Introduced `getNormalizedViewportCoord` shader API.
+- Added basic SwiftShader support.
+- Fixed SwapChain resizing issues in Vulkan.
+- Added debug option to track `Entities`.
+- Fixed `Camera` entity leaks.
+- Removed problematic `CreateEliminateDeadMembersPass`, which broke UBO layout.
+- Added assert that the engine is not terminated in `flushAndWait()`.
+- Added several fixes and improvements around objects lifetime management
+- `gltfio`: AssetLoader now loads names for mesh-free nodes
+- `gltfio`: Material names are now preserved in ubershader mode
+- Fixed JNI objects allocation and memory corruption
+- JNI constructors are now "package private" unless they take an Engine.
+
 ## v1.6.0
 
 - gltfio: fixed incorrect cone angles with lights.

@@ -37,8 +37,6 @@ namespace filament {
 
 class MaterialParser;
 
-namespace details {
-
 class  FEngine;
 
 class FMaterial : public Material {
@@ -65,9 +63,11 @@ public:
     }
 
     // Create an instance of this material
-    FMaterialInstance* createInstance() const noexcept;
+    FMaterialInstance* createInstance(const char* name) const noexcept;
 
     bool hasParameter(const char* name) const noexcept;
+
+    bool isSampler(const char* name) const noexcept;
 
     UniformInterfaceBlock::UniformInfo const* reflect(utils::StaticString const& name) const noexcept;
 
@@ -76,9 +76,6 @@ public:
 
     FEngine& getEngine() const noexcept  { return mEngine; }
 
-    backend::Handle<backend::HwProgram> getProgramSlow(uint8_t variantKey) const noexcept;
-    backend::Handle<backend::HwProgram> getSurfaceProgramSlow(uint8_t variantKey) const noexcept;
-    backend::Handle<backend::HwProgram> getPostProcessProgramSlow(uint8_t variantKey) const noexcept;
     backend::Handle<backend::HwProgram> getProgram(uint8_t variantKey) const noexcept {
 #if FILAMENT_ENABLE_MATDBG
         if (UTILS_UNLIKELY(mPendingEdits.load())) {
@@ -159,6 +156,10 @@ public:
     static MaterialParser* createParser(backend::Backend backend, const void* data, size_t size);
 
 private:
+    backend::Handle<backend::HwProgram> getProgramSlow(uint8_t variantKey) const noexcept;
+    backend::Handle<backend::HwProgram> getSurfaceProgramSlow(uint8_t variantKey) const noexcept;
+    backend::Handle<backend::HwProgram> getPostProcessProgramSlow(uint8_t variantKey) const noexcept;
+
     // try to order by frequency of use
     mutable std::array<backend::Handle<backend::HwProgram>, VARIANT_COUNT> mCachedPrograms;
 
@@ -205,7 +206,6 @@ private:
 
 FILAMENT_UPCAST(Material)
 
-} // namespace details
 } // namespace filament
 
 #endif // TNT_FILAMENT_DETAILS_MATERIAL_H

@@ -73,7 +73,11 @@ import static com.google.android.filament.Texture.Type.COMPRESSED;
 public class Texture {
     private long mNativeObject;
 
-    public Texture(long nativeTexture) {
+    Texture(long nativeTexture) {
+        mNativeObject = nativeTexture;
+    }
+
+    public Texture(Engine engine, long nativeTexture) {
         mNativeObject = nativeTexture;
     }
 
@@ -730,6 +734,8 @@ public class Texture {
         public static final int UPLOADABLE = 0x8;
         /** The texture can be read from a shader or blitted from */
         public static final int SAMPLEABLE = 0x10;
+        /** Texture can be used as a subpass input */
+        public static final int SUBPASS_INPUT = 0x20;
         /** by default textures are <code>UPLOADABLE</code> and <code>SAMPLEABLE</code>*/
         public static final int DEFAULT = UPLOADABLE | SAMPLEABLE;
     }

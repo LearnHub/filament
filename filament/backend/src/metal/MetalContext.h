@@ -31,11 +31,11 @@ namespace metal {
 class MetalBlitter;
 class MetalBufferPool;
 class MetalRenderTarget;
+class MetalSwapChain;
 class TimerQueryInterface;
 struct MetalUniformBuffer;
 struct MetalIndexBuffer;
 struct MetalSamplerGroup;
-struct MetalSwapChain;
 struct MetalVertexBuffer;
 
 struct MetalContext {
@@ -80,8 +80,6 @@ struct MetalContext {
     id<CAMetalDrawable> currentDrawable = nil;
     id<MTLTexture> currentDepthTexture = nil;
     id<MTLTexture> headlessDrawable = nil;
-    MTLPixelFormat currentSurfacePixelFormat = MTLPixelFormatInvalid;
-    MTLPixelFormat currentDepthPixelFormat = MTLPixelFormatInvalid;
 
     // External textures.
     CVMetalTextureCacheRef textureCache = nullptr;

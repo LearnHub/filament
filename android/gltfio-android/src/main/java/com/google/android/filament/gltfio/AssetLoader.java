@@ -47,7 +47,7 @@ import java.nio.Buffer;
  *
  *     assetLoader = AssetLoader(engine, MaterialProvider(engine), EntityManager.get())
  *
- *     filamentAsset = assets.open("models/lucy.gltf").use { input ->
+ *     filamentAsset = assets.open("models/lucy.gltf").use { input -&gt;
  *         val bytes = ByteArray(input.available())
  *         input.read(bytes)
  *         assetLoader.createAssetFromJson(ByteBuffer.wrap(bytes))!!
@@ -77,6 +77,7 @@ import java.nio.Buffer;
  */
 public class AssetLoader {
     private long mNativeObject;
+    private Engine mEngine;
 
     /**
      * Constructs an <code>AssetLoader </code>that can be used to create and destroy instances of
@@ -97,6 +98,8 @@ public class AssetLoader {
         if (mNativeObject == 0) {
             throw new IllegalStateException("Unable to parse glTF asset.");
         }
+
+        mEngine = engine;
     }
 
     /**
@@ -113,7 +116,7 @@ public class AssetLoader {
     @Nullable
     public FilamentAsset createAssetFromBinary(@NonNull Buffer buffer) {
         long nativeAsset = nCreateAssetFromBinary(mNativeObject, buffer, buffer.remaining());
-        return nativeAsset != 0 ? new FilamentAsset(nativeAsset) : null;
+        return nativeAsset != 0 ? new FilamentAsset(mEngine, nativeAsset) : null;
     }
 
     /**
@@ -122,12 +125,37 @@ public class AssetLoader {
     @Nullable
     public FilamentAsset createAssetFromJson(@NonNull Buffer buffer) {
         long nativeAsset = nCreateAssetFromJson(mNativeObject, buffer, buffer.remaining());
-        return nativeAsset != 0 ? new FilamentAsset(nativeAsset) : null;
+        return nativeAsset != 0 ? new FilamentAsset(mEngine, nativeAsset) : null;
+    }
+
+    /**
+     * Consumes the contents of a glTF 2.0 file and produces a primary asset with one or more
+     * instances.
+     *
+     * The given instance array must be sized to the desired number of instances. If successful,
+     * this method will populate the array with secondary instances whose resources are shared with
+     * the primary asset.
+     */
+    @Nullable
+    @SuppressWarnings("unused")
+    public FilamentAsset createInstancedAsset(@NonNull Buffer buffer,
+            @NonNull FilamentInstance[] instances) {
+        long[] nativeInstances = new long[instances.length];
+        long nativeAsset = nCreateInstancedAsset(mNativeObject, buffer, buffer.remaining(),
+                nativeInstances);
+        if (nativeAsset == 0) {
+            return null;
+        }
+        for (int i = 0; i < nativeInstances.length; i++) {
+            instances[i] = new FilamentInstance(nativeInstances[i]);
+        }
+        return new FilamentAsset(mEngine, nativeAsset);
     }
 
     /**
      * Allows clients to enable diagnostic shading on newly-loaded assets.
      */
+    @SuppressWarnings("unused")
     public void enableDiagnostics(boolean enable) {
         nEnableDiagnostics(mNativeObject, enable);
     }
@@ -145,6 +173,8 @@ public class AssetLoader {
     private static native void nDestroyAssetLoader(long nativeLoader);
     private static native long nCreateAssetFromBinary(long nativeLoader, Buffer buffer, int remaining);
     private static native long nCreateAssetFromJson(long nativeLoader, Buffer buffer, int remaining);
+    private static native long nCreateInstancedAsset(long nativeLoader, Buffer buffer, int remaining,
+            long[] nativeInstances);
     private static native void nEnableDiagnostics(long nativeLoader, boolean enable);
     private static native void nDestroyAsset(long nativeLoader, long nativeAsset);
 }
