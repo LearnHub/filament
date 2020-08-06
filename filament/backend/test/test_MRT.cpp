@@ -131,7 +131,7 @@ TEST_F(BackendTest, MRT) {
 
         getDriverApi().flush();
         getDriverApi().commit(swapChain);
-        getDriverApi().endFrame(0);
+        getDriverApi().endFrame(0, nullptr, nullptr);
 
         getDriverApi().stopCapture(0);
 
