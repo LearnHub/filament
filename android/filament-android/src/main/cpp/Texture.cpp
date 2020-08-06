@@ -139,6 +139,12 @@ Java_com_google_android_filament_Texture_nBuilderBuild(JNIEnv*, jclass,
 // Texture...
 
 extern "C" JNIEXPORT jint JNICALL
+Java_com_google_android_filament_Texture_nGetHwHandle(JNIEnv*, jclass, jlong nativeTexture) {
+    Texture *texture = (Texture *) nativeTexture;
+    return (jint) texture->getHwHandle();
+}
+
+extern "C" JNIEXPORT jint JNICALL
 Java_com_google_android_filament_Texture_nGetWidth(JNIEnv*, jclass, jlong nativeTexture,
         jint level) {
     Texture *texture = (Texture *) nativeTexture;

@@ -507,6 +507,9 @@ void FTexture::generatePrefilterMipmap(FEngine& engine,
 
 using namespace details;
 
+uint32_t Texture::getHwHandle() const noexcept {
+    return upcast(this)->getHwHandle().getId();
+}
 
 size_t Texture::getWidth(size_t level) const noexcept {
     return upcast(this)->getWidth(level);

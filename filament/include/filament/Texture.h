@@ -209,6 +209,8 @@ public:
         friend class details::FTexture;
     };
 
+    uint32_t getHwHandle() const noexcept;
+
     /**
      * Returns the width of a 2D or 3D texture level
      * @param level texture level.

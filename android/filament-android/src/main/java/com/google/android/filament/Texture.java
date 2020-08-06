@@ -736,6 +736,11 @@ public class Texture {
 
     public static final int BASE_LEVEL = 0;
 
+    public int getHwHandle() {
+        return nGetHwHandle(getNativeObject());
+    }
+
+
     /**
      * Queries the width of a given level of this texture.
      * @param level to query the with of. Must be between 0 and {@link #getLevels}
@@ -1103,6 +1108,7 @@ public class Texture {
     private static native void nBuilderSwizzle(long nativeBuilder, int r, int g, int b, int a);
     private static native long nBuilderBuild(long nativeBuilder, long nativeEngine);
 
+    private static native int nGetHwHandle(long nativeTexture);
     private static native int nGetWidth(long nativeTexture, int level);
     private static native int nGetHeight(long nativeTexture, int level);
     private static native int nGetDepth(long nativeTexture, int level);
