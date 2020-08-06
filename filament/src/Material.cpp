@@ -294,6 +294,10 @@ bool FMaterial::hasParameter(const char* name) const noexcept {
     return true;
 }
 
+bool FMaterial::isSampler(const char* name) const noexcept {
+    return mSamplerInterfaceBlock.hasSampler(name);
+}
+
 UniformInterfaceBlock::UniformInfo const* FMaterial::reflect(
         utils::StaticString const& name) const noexcept {
     auto const& list = mUniformInterfaceBlock.getUniformInfoList();
@@ -482,12 +486,19 @@ void FMaterial::onQueryCallback(void* userdata, uint16_t* pvariants) {
 }
 
  /** @}*/
- 
+
 MaterialParser* FMaterial::createParser(backend::Backend backend, const void* data, size_t size) {
     MaterialParser* materialParser = new MaterialParser(backend, data, size);
 
-    bool materialOK = materialParser->parse();
-    if (!ASSERT_POSTCONDITION_NON_FATAL(materialOK, "could not parse the material package")) {
+    MaterialParser::ParseResult materialResult = materialParser->parse();
+
+    if (!ASSERT_POSTCONDITION_NON_FATAL(materialResult != MaterialParser::ParseResult::ERROR_MISSING_BACKEND,
+                "the material was not built for the %s backend\n", backendToString(backend))) {
+        return nullptr;
+    }
+
+    if (!ASSERT_POSTCONDITION_NON_FATAL(materialResult == MaterialParser::ParseResult::SUCCESS,
+                "could not parse the material package")) {
         return nullptr;
     }
 
@@ -616,6 +627,10 @@ RefractionType Material::getRefractionType() const noexcept {
 
 bool Material::hasParameter(const char* name) const noexcept {
     return upcast(this)->hasParameter(name);
+}
+
+bool Material::isSampler(const char* name) const noexcept {
+    return upcast(this)->isSampler(name);
 }
 
 MaterialInstance* Material::getDefaultInstance() noexcept {

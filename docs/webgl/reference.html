@@ -306,6 +306,11 @@
 <h2>class <a id='Engine' href='#Engine'>Engine</a></h2>
 <p>Central manager and resource owner.</p>
 <ul>
+<li><strong>engine.addEntities(entities)</strong>
+<ul>
+<li><em>entities</em> array of entities</li>
+</ul>
+</li>
 <li><strong>Engine.create(canvas, options)</strong>
 <ul>
 <li>Creates an Engine instance for the given canvas.</li>
@@ -319,8 +324,9 @@
 <li><em>returns</em> an instance of <a href="#AssetLoader">AssetLoader</a></li>
 </ul>
 </li>
-<li><strong>engine.createCamera()</strong>
+<li><strong>engine.createCamera(entity)</strong>
 <ul>
+<li><em>entity</em> the <a href="#Entity">Entity</a> to add the camera component to</li>
 <li><em>returns</em> an instance of <a href="#Camera">Camera</a></li>
 </ul>
 </li>
@@ -396,9 +402,9 @@
 <li><em>engine</em> the instance to destroy</li>
 </ul>
 </li>
-<li><strong>engine.destroyCamera(camera)</strong>
+<li><strong>engine.destroyCameraComponent(camera)</strong>
 <ul>
-<li><em>camera</em> an instance of <a href="#Camera">Camera</a></li>
+<li><em>camera</em> an <a href="#Entity">Entity</a> with a camera component</li>
 </ul>
 </li>
 <li><strong>engine.destroyEntity(entity)</strong>
@@ -466,6 +472,11 @@
 <li><em>view</em> an instance of <a href="#View">View</a></li>
 </ul>
 </li>
+<li><strong>engine.getCameraComponent()</strong>
+<ul>
+<li><em>returns</em> an instance of <a href="#Camera">Camera</a></li>
+</ul>
+</li>
 <li><strong>engine.getLightManager()</strong>
 <ul>
 <li><em>returns</em> an instance of <a href="#LightManager">LightManager</a></li>
@@ -505,12 +516,19 @@
 <li><em>overrides</em> Dictionary with one or more of the following properties: clearColor, clear, discard.</li>
 </ul>
 </li>
+<li><strong>engine.setDepthOfFieldOptions(overrides)</strong>
+<ul>
+<li><em>overrides</em> Dictionary with one or more of the following properties: focusDistance, blurScale, maxApertureDiameter, enabled.</li>
+</ul>
+</li>
 </ul>
 </div>
 <div class='classdoc'>
 <h2>class <a id='Entity' href='#Entity'>Entity</a></h2>
 <p>Handle to an object consisting of a set of components.</p>
-<p>To create an entity with no components, use <a href="#EntityManager">EntityManager</a>.</p>
+<p>To create an entity with no components, use <a href="#EntityManager">EntityManager</a>.
+TODO: It would be better to expose these as JS numbers rather than as JS objects.
+This would also be more consistent with Filament's Java bindings.</p>
 </div>
 <div class='classdoc'>
 <h2>class <a id='EntityManager' href='#EntityManager'>EntityManager</a></h2>
@@ -621,13 +639,19 @@ wrapper rather than interacting with <code>KtxBundle</code> directly.</p>
 <h2>class <a id='KtxInfo' href='#KtxInfo'>KtxInfo</a></h2>
 <p>Property accessor for KTX header.</p>
 <ul>
-<li><strong>KtxInfo.createAssetFroBinary(buffer)</strong>
+<li><strong>KtxInfo.createAssetFromBinary(buffer)</strong>
 <ul>
 <li><em>buffer</em> asset string, or Uint8Array, or <a href="#Buffer">Buffer</a></li>
 <li><em>returns</em> an instance of <a href="#FilamentAsset">FilamentAsset</a></li>
 </ul>
 </li>
 <li><strong>KtxInfo.createAssetFromJson(buffer)</strong>
+<ul>
+<li><em>buffer</em> asset string, or Uint8Array, or <a href="#Buffer">Buffer</a></li>
+<li><em>returns</em> an instance of <a href="#FilamentAsset">FilamentAsset</a></li>
+</ul>
+</li>
+<li><strong>KtxInfo.createInstancedAsset(buffer)</strong>
 <ul>
 <li><em>buffer</em> asset string, or Uint8Array, or <a href="#Buffer">Buffer</a></li>
 <li><em>returns</em> an instance of <a href="#FilamentAsset">FilamentAsset</a></li>

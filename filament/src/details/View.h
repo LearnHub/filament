@@ -51,6 +51,15 @@ namespace utils {
 class JobSystem;
 } // namespace utils;
 
+// Avoid warnings for using the ToneMapping API, which has been publically deprecated.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+#pragma warning push
+#pragma warning disable : 4996
+#endif
+
 namespace filament {
 
 class FEngine;
@@ -291,6 +300,10 @@ public:
         mFogOptions = options;
     }
 
+    FogOptions getFogOptions() const noexcept {
+        return mFogOptions;
+    }
+
     void setDepthOfFieldOptions(DepthOfFieldOptions options) noexcept {
         options.focusDistance = std::max(0.0f, options.focusDistance);
         options.blurScale = std::max(0.0f, options.blurScale);
@@ -300,6 +313,17 @@ public:
 
     DepthOfFieldOptions getDepthOfFieldOptions() const noexcept {
         return mDepthOfFieldOptions;
+    }
+
+    void setVignetteOptions(VignetteOptions options) noexcept {
+        options.roundness = math::saturate(options.roundness);
+        options.midPoint = math::saturate(options.midPoint);
+        options.feather = math::clamp(options.feather, 0.05f, 1.0f);
+        mVignetteOptions = options;
+    }
+
+    VignetteOptions getVignetteOptions() const noexcept {
+        return mVignetteOptions;
     }
 
     void setBlendMode(BlendMode blendMode) noexcept {
@@ -397,6 +421,7 @@ private:
     BloomOptions mBloomOptions;
     FogOptions mFogOptions;
     DepthOfFieldOptions mDepthOfFieldOptions;
+    VignetteOptions mVignetteOptions;
     BlendMode mBlendMode = BlendMode::OPAQUE;
     const FColorGrading* mColorGrading = nullptr;
     const FColorGrading* mDefaultColorGrading = nullptr;
@@ -428,5 +453,11 @@ private:
 FILAMENT_UPCAST(View)
 
 } // namespace filament
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning pop
+#endif
 
 #endif // TNT_FILAMENT_DETAILS_VIEW_H

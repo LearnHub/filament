@@ -132,6 +132,11 @@ MaterialBuilder& MaterialBuilder::name(const char* name) noexcept {
     return *this;
 }
 
+MaterialBuilder& MaterialBuilder::fileName(const char* fileName) noexcept {
+    mFileName = CString(fileName);
+    return *this;
+}
+
 MaterialBuilder& MaterialBuilder::material(const char* code, size_t line) noexcept {
     mMaterialCode.setUnresolved(CString(code));
     mMaterialCode.setLineOffset(line);
@@ -350,6 +355,11 @@ MaterialBuilder& MaterialBuilder::variantFilter(uint8_t variantFilter) noexcept 
     return *this;
 }
 
+MaterialBuilder& MaterialBuilder::shaderDefine(const char* name, const char* value) noexcept {
+    mDefines.emplace_back(name, value);
+    return *this;
+}
+
 bool MaterialBuilder::hasExternalSampler() const noexcept {
     for (size_t i = 0, c = mParameterCount; i < c; i++) {
         auto const& param = mParameters[i];
@@ -512,11 +522,23 @@ bool MaterialBuilder::checkLiteRequirements() noexcept {
     return true;
 }
 
-bool MaterialBuilder::ShaderCode::resolveIncludes(IncludeCallback callback) noexcept {
+bool MaterialBuilder::ShaderCode::resolveIncludes(IncludeCallback callback,
+        const utils::CString& fileName) noexcept {
     if (!mCode.empty()) {
-        if (!::filamat::resolveIncludes(utils::CString(""), mCode, callback)) {
+        ResolveOptions options {
+            .insertLineDirectives = true,
+            .insertLineDirectiveCheck = true
+        };
+        IncludeResult source {
+            .includeName = fileName,
+            .text = mCode,
+            .lineNumberOffset = getLineOffset(),
+            .name = utils::CString("")
+        };
+        if (!::filamat::resolveIncludes(source, callback, options)) {
             return false;
         }
+        mCode = source.text;
     }
 
     mIncludesResolved = true;
@@ -563,7 +585,7 @@ bool MaterialBuilder::generateShaders(const std::vector<Variant>& variants, Chun
     std::vector<uint32_t> spirv;
     std::string msl;
 
-    ShaderGenerator sg(mProperties, mVariables, mMaterialCode.getResolved(),
+    ShaderGenerator sg(mProperties, mVariables, mDefines, mMaterialCode.getResolved(),
             mMaterialCode.getLineOffset(), mMaterialVertexCode.getResolved(),
             mMaterialVertexCode.getLineOffset(), mMaterialDomain);
 
@@ -708,8 +730,8 @@ Package MaterialBuilder::build() noexcept {
     }
 
     // Resolve all the #include directives within user code.
-    if (!mMaterialCode.resolveIncludes(mIncludeCallback) ||
-        !mMaterialVertexCode.resolveIncludes(mIncludeCallback)) {
+    if (!mMaterialCode.resolveIncludes(mIncludeCallback, mFileName) ||
+        !mMaterialVertexCode.resolveIncludes(mIncludeCallback, mFileName)) {
         return Package::invalidPackage();
     }
 
@@ -754,7 +776,7 @@ Package MaterialBuilder::build() noexcept {
 
 const std::string MaterialBuilder::peek(filament::backend::ShaderType type,
         const CodeGenParams& params, const PropertyList& properties) noexcept {
-    ShaderGenerator sg(properties, mVariables, mMaterialCode.getResolved(),
+    ShaderGenerator sg(properties, mVariables, mDefines, mMaterialCode.getResolved(),
             mMaterialCode.getLineOffset(), mMaterialVertexCode.getResolved(),
             mMaterialVertexCode.getLineOffset(), mMaterialDomain);
 
