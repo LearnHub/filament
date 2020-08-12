@@ -325,7 +325,7 @@ public class Camera {
      * @param viewMatrix The camera position and orientation provided as a <b>rigid transform</b> matrix.
      */
     public void setModelMatrix(@NonNull @Size(min = 16) float[] viewMatrix) {
-        Asserts.assertMat4fIn(viewMatrix);
+        //Asserts.assertMat4fIn(viewMatrix);
         nSetModelMatrix(getNativeObject(), viewMatrix);
     }
 
