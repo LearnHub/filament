@@ -5,6 +5,36 @@ A new header is inserted each time a *tag* is created.
 
 ## Next release
 
+## v1.9.0
+
+- `MASKED` mode now leaves destination alpha intact (useful for transparent targets).
+- `MASKED` mode now benefit from smoothing in `unlit` materials.
+- Small performance improvement to FXAA.
+- Fixed `KHR_materials_transmission` to use the `FADE` blending mode.
+- Fixed frame graph crash when more than 32 stages were required.
+- Fixed several memory leaks in gltfio and the JavaScript bindings.
+- Fixed several platform-specific Vulkan bugs and crashes.
+- Temporal Anti-Aliasing (TAA) is now available as a complement to MSAA and FXAA. It can be turned
+  on and controlled using `View.setTemporalAntiAliasingOptions()`.
+- Added texture getters to `Skybox` and `IndirectLight` (C++, Java, JavaScript).
+- Added APIs to create 3D textures and 2D texture arrays.
+- Internal buffers can now be sized at compile times for applications that render very large
+  numbers of objects.
+- `View.setAmbientOcclusion()` is deprecated in favor of `View.setAmbientOcclusionOptions`
+   (⚠️ **API change**).
+- Switched to C++17.
+- Variance Shadow Mapping (VSM) is now available as an alternative to PCF shadows (experimental).
+- Reduced compiled material sizes by removing unnecessary variants.
+- Many improvement and fixes in the Vulkan backend.
+- Many improvement and fixes in the Metal backend.
+- Fixed translucent views with custom render targets.
+- Improved MSAA implementation compatibility on Android devices.
+- Use "reverse-z" for the depth buffer.
+- Added a way to create an `Engine` asynchronously.
+- Highlights are now more stable under depth of field.
+- New option to compress highlights before bloom.
+- Improvements and fixes to SSAO and DOF.
+
 ## v1.8.1
 
 - New CocoaPods sample for iOS.
@@ -23,7 +53,7 @@ A new header is inserted each time a *tag* is created.
   Google-style line directives in shaders.
 - Color grading now has a quality option which affects the size and bit depth of the 3D LUT.
 - Fixed crash in the Metal backend when more than 16 samplers are bound.
-- Added validation in Texture::setImage().
+- Added validation in `Texture::setImage()`.
 - Fixed refraction/transmission roughness when specular anti-aliasing is enabled.
 
 ## v1.8.0

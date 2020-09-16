@@ -30,12 +30,14 @@ namespace filament {
 
 namespace fg {
 struct PassNode;
+struct ResourceNode;
 class RenderTargetResourceEntry;
 } // namespace fg
 
 class Blackboard;
 class FrameGraph;
 class FrameGraphPassResources;
+class ResourceAllocatorInterface;
 
 // ------------------------------------------------------------------------------------------------
 
@@ -51,8 +53,8 @@ struct FrameGraphTexture {
         backend::TextureUsage usage = (backend::TextureUsage)0;
     };
 
-    void create(FrameGraph& fg, const char* name, Descriptor const& desc) noexcept;
-    void destroy(FrameGraph& fg) noexcept;
+    void create(ResourceAllocatorInterface& allocator, const char* name, Descriptor const& desc) noexcept;
+    void destroy(ResourceAllocatorInterface& allocator) noexcept;
 
     backend::Handle<backend::HwTexture> texture;
 };
@@ -69,6 +71,7 @@ class FrameGraphHandle {
     friend class FrameGraph;
     friend class FrameGraphPassResources;
     friend struct fg::PassNode;
+    friend struct fg::ResourceNode;
     friend class fg::RenderTargetResourceEntry;
 
     // private ctor -- this cannot be constructed by users
@@ -80,6 +83,14 @@ class FrameGraphHandle {
     uint16_t index = UNINITIALIZED;
 
 public:
+    FrameGraphHandle(FrameGraphHandle const& rhs) noexcept = default;
+    FrameGraphHandle(FrameGraphHandle&& rhs) noexcept : index(rhs.index) { rhs.index = UNINITIALIZED; }
+    FrameGraphHandle& operator=(FrameGraphHandle const& rhs) noexcept = default;
+    FrameGraphHandle& operator=(FrameGraphHandle&& rhs) noexcept  {
+        std::swap(rhs.index, index);
+        return *this;
+    }
+
     bool isValid() const noexcept { return index != UNINITIALIZED; }
 
     void clear() noexcept { index = UNINITIALIZED; }
@@ -128,14 +139,19 @@ struct FrameGraphRenderTarget {
             AttachmentInfo(FrameGraphId<FrameGraphTexture> handle, uint8_t level) noexcept
                     : mHandle(handle), mLevel(level) {}
 
+            AttachmentInfo(FrameGraphId<FrameGraphTexture> handle, uint8_t level, uint8_t layer) noexcept
+                    : mHandle(handle), mLevel(level), mLayer(layer) {}
+
             bool isValid() const noexcept { return mHandle.isValid(); }
 
             FrameGraphId<FrameGraphTexture> getHandle() const noexcept { return mHandle; }
             uint8_t getLevel() const noexcept { return mLevel; }
+            uint8_t getLayer() const noexcept { return mLayer; }
 
         private:
             FrameGraphId<FrameGraphTexture> mHandle{};
             uint8_t mLevel = 0;
+            uint8_t mLayer = 0;
         };
 
         Attachments() noexcept
@@ -175,8 +191,8 @@ struct FrameGraphRenderTarget {
     backend::RenderPassParams params;
 
     // these are empty because we have custom overrides for rendertargets
-    void create(FrameGraph& fg, const char* name, Descriptor const& desc) noexcept {}
-    void destroy(FrameGraph& fg) noexcept {}
+    void create(ResourceAllocatorInterface& allocator, const char* name, Descriptor const& desc) noexcept {}
+    void destroy(ResourceAllocatorInterface& allocator) noexcept {}
 };
 
 using FrameGraphRenderTargetHandle = FrameGraphId<FrameGraphRenderTarget>;

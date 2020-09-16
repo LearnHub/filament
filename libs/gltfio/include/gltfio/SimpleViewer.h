@@ -154,7 +154,7 @@ public:
      * Enables screen-space ambient occlusion in the post-process pipeline.
      * Defaults to true.
      */
-    void enableSSAO(bool b) { mEnableSsao = b; }
+    void enableSSAO(bool b) { mSSAOOptions.enabled = b; }
 
     /**
      * Enables Bloom.
@@ -189,13 +189,14 @@ private:
     // Properties that can be changed from the UI.
     int mCurrentAnimation = 1;
     bool mResetAnimation = true;
-    float mIblIntensity = 20000.0f;
+    float mIblIntensity = 30000.0f;
     float mIblRotation = 0.0f;
     float mSunlightIntensity = 100000.0f; // <-- This value is overridden when loading an IBL.
     filament::math::float3 mSunlightColor = filament::Color::toLinear<filament::ACCURATE>({ 0.98, 0.92, 0.89});
     filament::math::float3 mSunlightDirection = {0.6, -1.0, -0.8};
     bool mEnableWireframe = false;
     bool mEnableSunlight = true;
+    bool mEnableVsm = false;
     bool mEnableShadows = true;
     int mShadowCascades = 1;
     bool mEnableContactShadows = false;
@@ -203,9 +204,10 @@ private:
     bool mEnableDithering = true;
     bool mEnableFxaa = true;
     bool mEnableMsaa = true;
-    bool mEnableSsao = true;
+    filament::View::AmbientOcclusionOptions mSSAOOptions = { .enabled = true };
     filament::View::BloomOptions mBloomOptions = { .enabled = true };
     filament::View::FogOptions mFogOptions = {};
+    filament::View::TemporalAntiAliasingOptions mTAAOptions = {};
     int mSidebarWidth;
     uint32_t mFlags;
 };
@@ -237,7 +239,7 @@ filament::math::mat4f fitIntoUnitCube(const filament::Aabb& bounds) {
     using namespace filament::math;
     auto minpt = bounds.min;
     auto maxpt = bounds.max;
-    float maxExtent = 0;
+    float maxExtent;
     maxExtent = std::max(maxpt.x - minpt.x, maxpt.y - minpt.y);
     maxExtent = std::max(maxExtent, maxpt.z - minpt.z);
     float scaleFactor = 2.0f / maxExtent;
@@ -461,10 +463,24 @@ void SimpleViewer::updateUserInterface() {
     if (ImGui::CollapsingHeader("View")) {
         ImGui::Indent();
         ImGui::Checkbox("Dithering", &mEnableDithering);
-        ImGui::Checkbox("FXAA", &mEnableFxaa);
         ImGui::Checkbox("MSAA 4x", &mEnableMsaa);
-        ImGui::Checkbox("SSAO", &mEnableSsao);
+        ImGui::Checkbox("TAA", &mTAAOptions.enabled);
+        // this clutters the UI and isn't that useful (except when working on TAA)
+        //ImGui::Indent();
+        //ImGui::SliderFloat("feedback", &mTAAOptions.feedback, 0.0f, 1.0f);
+        //ImGui::SliderFloat("filter", &mTAAOptions.filterWidth, 0.0f, 2.0f);
+        //ImGui::Unindent();
+        ImGui::Checkbox("FXAA", &mEnableFxaa);
+        ImGui::Checkbox("SSAO", &mSSAOOptions.enabled);
         ImGui::Checkbox("Bloom", &mBloomOptions.enabled);
+        if (ImGui::CollapsingHeader("SSAO Options")) {
+            int quality = (int) mSSAOOptions.quality;
+            bool upsampling = mSSAOOptions.upsampling != View::QualityLevel::LOW;
+            ImGui::SliderInt("Quality", &quality, 0, 3);
+            ImGui::Checkbox("High quality upsampling", &upsampling);
+            mSSAOOptions.upsampling = upsampling ? View::QualityLevel::HIGH : View::QualityLevel::LOW;
+            mSSAOOptions.quality = (View::QualityLevel) quality;
+        }
         ImGui::Unindent();
     }
 
@@ -476,8 +492,9 @@ void SimpleViewer::updateUserInterface() {
         ImGuiExt::DirectionWidget("Sun direction", mSunlightDirection.v);
         ImGui::Checkbox("Enable sunlight", &mEnableSunlight);
         ImGui::Checkbox("Enable shadows", &mEnableShadows);
+        ImGui::Checkbox("Enable VSM", &mEnableVsm);
         ImGui::SliderInt("Cascades", &mShadowCascades, 1, 4);
-        ImGui::Checkbox("Debug Cascades", debug.getPropertyAddress<bool>("d.shadowmap.visualize_cascades"));
+        ImGui::Checkbox("Debug cascades", debug.getPropertyAddress<bool>("d.shadowmap.visualize_cascades"));
         ImGui::Checkbox("Enable contact shadows", &mEnableContactShadows);
         ImGui::SliderFloat("Split pos 0", &mSplitPositions[0], 0.0f, 1.0f);
         ImGui::SliderFloat("Split pos 1", &mSplitPositions[1], 0.0f, 1.0f);
@@ -487,13 +504,13 @@ void SimpleViewer::updateUserInterface() {
 
     if (ImGui::CollapsingHeader("Fog")) {
         ImGui::Indent();
-        ImGui::Checkbox("Enable Fog", &mFogOptions.enabled);
+        ImGui::Checkbox("Enable fog", &mFogOptions.enabled);
         ImGui::SliderFloat("Start", &mFogOptions.distance, 0.0f, 100.0f);
         ImGui::SliderFloat("Density", &mFogOptions.density, 0.0f, 1.0f);
         ImGui::SliderFloat("Height", &mFogOptions.height, 0.0f, 100.0f);
-        ImGui::SliderFloat("Height Falloff", &mFogOptions.heightFalloff, 0.0f, 10.0f);
-        ImGui::SliderFloat("Scattering Start", &mFogOptions.inScatteringStart, 0.0f, 100.0f);
-        ImGui::SliderFloat("Scattering Size", &mFogOptions.inScatteringSize, 0.0f, 100.0f);
+        ImGui::SliderFloat("Height falloff", &mFogOptions.heightFalloff, 0.0f, 10.0f);
+        ImGui::SliderFloat("Scattering start", &mFogOptions.inScatteringStart, 0.0f, 100.0f);
+        ImGui::SliderFloat("Scattering size", &mFogOptions.inScatteringSize, 0.1f, 100.0f);
         ImGui::Checkbox("Color from IBL", &mFogOptions.fogColorFromIbl);
         ImGui::ColorPicker3("Color", mFogOptions.color.v);
         ImGui::Unindent();
@@ -502,10 +519,10 @@ void SimpleViewer::updateUserInterface() {
     mView->setDithering(mEnableDithering ? View::Dithering::TEMPORAL : View::Dithering::NONE);
     mView->setAntiAliasing(mEnableFxaa ? View::AntiAliasing::FXAA : View::AntiAliasing::NONE);
     mView->setSampleCount(mEnableMsaa ? 4 : 1);
-    mView->setAmbientOcclusion(
-            mEnableSsao ? View::AmbientOcclusion::SSAO : View::AmbientOcclusion::NONE);
+    mView->setAmbientOcclusionOptions(mSSAOOptions);
     mView->setBloomOptions(mBloomOptions);
     mView->setFogOptions(mFogOptions);
+    mView->setTemporalAntiAliasingOptions(mTAAOptions);
 
     if (mEnableSunlight) {
         mScene->addEntity(mSunlight);
@@ -526,6 +543,8 @@ void SimpleViewer::updateUserInterface() {
         lm.setShadowOptions(ci, options);
         lm.setShadowCaster(ci, mEnableShadows);
     });
+
+    mView->setShadowType(mEnableVsm ? View::ShadowType::VSM : View::ShadowType::PCF);
 
     if (mAsset != nullptr) {
         if (ImGui::CollapsingHeader("Hierarchy")) {

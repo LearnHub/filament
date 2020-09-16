@@ -165,7 +165,8 @@ void MetalRenderPrimitive::setBuffers(MetalVertexBuffer* vertexBuffer, MetalInde
 }
 
 MetalProgram::MetalProgram(id<MTLDevice> device, const Program& program) noexcept
-    : HwProgram(program.getName()) {
+    : HwProgram(program.getName()), vertexFunction(nil), fragmentFunction(nil), samplerGroupInfo(),
+        isValid(false) {
 
     using MetalFunctionPtr = __strong id<MTLFunction>*;
 
@@ -195,11 +196,15 @@ MetalProgram::MetalProgram(id<MTLDevice> device, const Program& program) noexcep
                         [error.localizedDescription cStringUsingEncoding:NSUTF8StringEncoding];
                 utils::slog.w << description << utils::io::endl;
             }
-            ASSERT_POSTCONDITION(false, "Unable to compile Metal shading library.");
+            PANIC_LOG("Failed to compile Metal program.");
+            return;
         }
 
         *shaderFunctions[i] = [library newFunctionWithName:@"main0"];
     }
+
+    // All stages of the program have compiled successfuly, this is a valid program.
+    isValid = true;
 
     samplerGroupInfo = program.getSamplerGroupInfo();
 }
@@ -552,10 +557,18 @@ void MetalRenderTarget::setUpRenderPassAttachments(MTLRenderPassDescriptor* desc
                 params.clearColor.r, params.clearColor.g, params.clearColor.b, params.clearColor.a);
 
         if (multisampledColor[i]) {
+            // We're rendering into our temporary MSAA texture and doing an automatic resolve.
+            // We should not be attempting to load anything into the MSAA texture.
+            assert(descriptor.colorAttachments[i].loadAction != MTLLoadActionLoad);
+
             descriptor.colorAttachments[i].texture = multisampledColor[i];
+            descriptor.colorAttachments[i].level = 0;
+            descriptor.colorAttachments[i].slice = 0;
             const bool discard = any(discardFlags & getMRTColorFlag(i));
             if (!discard) {
                 descriptor.colorAttachments[i].resolveTexture = attachment.texture;
+                descriptor.colorAttachments[i].resolveLevel = attachment.level;
+                descriptor.colorAttachments[i].resolveSlice = attachment.layer;
                 descriptor.colorAttachments[i].storeAction = MTLStoreActionMultisampleResolve;
             }
         }
@@ -570,10 +583,18 @@ void MetalRenderTarget::setUpRenderPassAttachments(MTLRenderPassDescriptor* desc
     descriptor.depthAttachment.clearDepth = params.clearDepth;
 
     if (multisampledDepth) {
+        // We're rendering into our temporary MSAA texture and doing an automatic resolve.
+        // We should not be attempting to load anything into the MSAA texture.
+        assert(descriptor.depthAttachment.loadAction != MTLLoadActionLoad);
+
         descriptor.depthAttachment.texture = multisampledDepth;
+        descriptor.depthAttachment.level = 0;
+        descriptor.depthAttachment.slice = 0;
         const bool discard = any(discardFlags & TargetBufferFlags::DEPTH);
         if (!discard) {
             descriptor.depthAttachment.resolveTexture = depthAttachment.texture;
+            descriptor.depthAttachment.resolveLevel = depthAttachment.level;
+            descriptor.depthAttachment.resolveSlice = depthAttachment.layer;
             descriptor.depthAttachment.storeAction = MTLStoreActionMultisampleResolve;
         }
     }

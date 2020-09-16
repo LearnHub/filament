@@ -28,6 +28,7 @@ export as namespace Filament;
 export function getSupportedFormatSuffix(desired: string): void;
 export function init(assets: string[], onready?: (() => void) | null): void;
 export function fetch(assets: string[], onDone?: (() => void) | null, onFetched?: ((name: string) => void) | null): void;
+export function clearAssetCache(): void;
 
 export const assets: {[url: string]: Uint8Array};
 
@@ -54,7 +55,6 @@ export interface Vector<T> {
 
 export function vectorToArray<T>(vector: Vector<T>): T[];
 
-export class Texture {}
 export class SwapChain {}
 export class ColorGrading {}
 
@@ -74,6 +74,22 @@ export interface Renderer$ClearOptions {
     discard?: boolean;
 }
 
+export interface LightManager$ShadowOptions {
+    mapSize?: number;
+    shadowCascades?: number;
+    constantBias?: number;
+    normalBias?: number;
+    shadowFar?: number;
+    shadowNearHint?: number;
+    shadowFarHint?: number;
+    stable?: boolean;
+    polygonOffsetConstant?: number;
+    polygonOffsetSlope?: number;
+    screenSpaceContactShadows?: boolean;
+    stepCount?: number;
+    maxShadowDistance?: number;
+}
+
 export interface View$AmbientOcclusionOptions {
     radius?: number;
     power?: number;
@@ -85,7 +101,7 @@ export interface View$AmbientOcclusionOptions {
 
 export interface View$DepthOfFieldOptions {
     focusDistance?: number;
-    blurScale?: number;
+    cocScale?: number;
     maxApertureDiameter?: number;
     enabled?: boolean;
 }
@@ -123,13 +139,41 @@ export interface View$VignetteOptions {
     enabled?: boolean;
 }
 
+// Clients should use the [PixelBuffer/CompressedPixelBuffer] helper function to contruct PixelBufferDescriptor objects.
+export class driver$PixelBufferDescriptor {
+    constructor(byteLength: number, format: PixelDataFormat, datatype: PixelDataType);
+    constructor(byteLength: number, cdtype: CompressedPixelDataType, imageSize: number, compressed: boolean);
+    getBytes(): ArrayBuffer;
+}
+
+// Clients should use createTextureFromKtx/ImageFile helper functions if low level control is not needed
+export class Texture$Builder {
+    public width(width: number): Texture$Builder;
+    public height(height: number): Texture$Builder;
+    public depth(depth: number): Texture$Builder;
+    public levels(levels: number): Texture$Builder;
+    public sampler(sampler: Texture$Sampler): Texture$Builder;
+    public format(format: Texture$InternalFormat): Texture$Builder;
+    public usage(usage: Texture$Usage): Texture$Builder;
+    public build(engine: Engine) : Texture;
+}
+
+export class Texture {
+    public static Builder(): Texture$Builder;
+    public setImage(engine: Engine, level: number, pbd: driver$PixelBufferDescriptor): void;
+    public setImageCube(engine: Engine, level: number, pbd: driver$PixelBufferDescriptor) : void;
+    public generateMipmaps(engine: Engine) : void;
+}
+
 // TODO: Remove the entity type and just use integers for parity with Filament's Java bindings.
 export class Entity {
     public getId(): number;
+    public delete(): void;
 }
 
 export class Skybox {
     public setColor(color: float4): void;
+    public getTexture(): Texture;
 }
 
 export class LightManager$Instance {
@@ -222,6 +266,7 @@ export class LightManager$Builder {
     public build(engine: Engine, entity: Entity): void;
     public castLight(enable: boolean): LightManager$Builder;
     public castShadows(enable: boolean): LightManager$Builder;
+    public shadowOptions(options: LightManager$ShadowOptions): LightManager$Builder;
     public color(rgb: float3): LightManager$Builder;
     public direction(value: float3): LightManager$Builder;
     public intensity(value: number): LightManager$Builder;
@@ -259,6 +304,7 @@ export class LightManager {
     public getIntensity(instance: LightManager$Instance): number;
     public setFalloff(instance: LightManager$Instance, radius: number): void;
     public getFalloff(instance: LightManager$Instance): number;
+    public setShadowOptions(instance: LightManager$Instance, options: LightManager$ShadowOptions): void;
     public setSpotLightCone(instance: LightManager$Instance, inner: number, outer: number): void;
     public setSunAngularRadius(instance: LightManager$Instance, angularRadius: number): void;
     public getSunAngularRadius(instance: LightManager$Instance): number;
@@ -325,7 +371,7 @@ export class Renderer {
     public render(swapChain: SwapChain, view: View): void;
     public setClearOptions(options: Renderer$ClearOptions): void;
     public renderView(view: View): void;
-    public beginFrame(swapChain: SwapChain, vsyncSteadyClockTimeNano: number): boolean;
+    public beginFrame(swapChain: SwapChain): boolean;
     public endFrame(): void;
 }
 
@@ -395,6 +441,8 @@ export class IndirectLight {
     public getIntensity(): number;
     public setRotation(value: mat3): void;
     public getRotation(): mat3;
+    public getReflectionsTexture(): Texture;
+    public getIrradianceTexture(): Texture;
     public static getDirectionEstimate(f32array: any): float3;
     public static getColorEstimate(f32array: any, direction: float3): float4;
     shfloats: Array<number>;
@@ -432,6 +480,7 @@ export class RenderTarget {
     public getMipLevel(): number;
     public getFace(): Texture$CubemapFace;
     public getLayer(): number;
+    public static Builder() : RenderTarget$Builder;
 }
 
 export class View {
@@ -473,6 +522,7 @@ interface Filamesh {
 
 export class Engine {
     public static create(canvas: HTMLCanvasElement, contextOptions?: object): Engine;
+    public execute(): void;
     public createCamera(entity: Entity): Camera;
     public createIblFromKtx(urlOrBuffer: BufferReference): IndirectLight;
     public createMaterial(urlOrBuffer: BufferReference): Material;

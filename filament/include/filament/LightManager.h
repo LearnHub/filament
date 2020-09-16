@@ -199,9 +199,7 @@ public:
          *
          * When using shadow cascades, cascadeSplitPositions must also be set.
          *
-         * @see ShadowCascades::cascadeSplitPositions
-         *
-         * @warning This API is still experimental and subject to change.
+         * @see ShadowOptions::cascadeSplitPositions
          */
         uint8_t shadowCascades = 1;
 
@@ -227,8 +225,6 @@ public:
          * @see ShadowCascades::computeUniformSplits
          * @see ShadowCascades::computeLogSplits
          * @see ShadowCascades::computePracticalSplits
-         *
-         * @warning This API is still experimental and subject to change.
          */
         float cascadeSplitPositions[3] = { 0.25f, 0.50f, 0.75f };
 
@@ -319,8 +315,6 @@ public:
          * Utility method to compute ShadowOptions::cascadeSplitPositions according to a uniform
          * split scheme.
          *
-         * @warning This API is still experimental and subject to change.
-         *
          * @param splitPositions    a float array of at least size (cascades - 1) to write the split
          *                          positions into
          * @param cascades          the number of shadow cascades, at most 4
@@ -330,8 +324,6 @@ public:
         /**
          * Utility method to compute ShadowOptions::cascadeSplitPositions according to a logarithmic
          * split scheme.
-         *
-         * @warning This API is still experimental and subject to change.
          *
          * @param splitPositions    a float array of at least size (cascades - 1) to write the split
          *                          positions into
@@ -346,12 +338,10 @@ public:
          * Utility method to compute ShadowOptions::cascadeSplitPositions according to a practical
          * split scheme.
          *
-         * The practical split scheme uses uses a lambda value to interpolate between the logrithmic
+         * The practical split scheme uses uses a lambda value to interpolate between the logarithmic
          * and uniform split schemes. Start with a lambda value of 0.5f and adjust for your scene.
          *
          * See: Zhang et al 2006, "Parallel-split shadow maps for large-scale virtual environments"
-         *
-         * @warning This API is still experimental and subject to change.
          *
          * @param splitPositions    a float array of at least size (cascades - 1) to write the split
          *                          positions into

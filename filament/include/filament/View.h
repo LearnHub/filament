@@ -61,8 +61,6 @@ class Viewport;
  */
 class UTILS_PUBLIC View : public FilamentAPI {
 public:
-    using TargetBufferFlags = backend::TargetBufferFlags;
-
     enum class QualityLevel : uint8_t {
         LOW,
         MEDIUM,
@@ -148,6 +146,7 @@ public:
         BlendMode blendMode = BlendMode::ADD;   //!< how the bloom effect is applied
         bool threshold = true;                  //!< whether to threshold the source
         bool enabled = false;                   //!< enable or disable bloom
+        float highlight = 1000.0f;              //!< limit highlights to this value before bloom [10, +inf]
     };
 
     /**
@@ -161,17 +160,23 @@ public:
         LinearColor color{0.5f};            //!< fog's color (linear), see fogColorFromIbl
         float density = 0.1f;               //!< fog's density at altitude given by 'height'
         float inScatteringStart = 0.0f;     //!< distance in world units from the camera where in-scattering starts
-        float inScatteringSize = -1.0f;     //!< size of in-scattering (>=0 to activate). Good values are >> 1 (e.g. ~10 - 100).
+        float inScatteringSize = -1.0f;     //!< size of in-scattering (>0 to activate). Good values are >> 1 (e.g. ~10 - 100).
         bool fogColorFromIbl = false;       //!< Fog color will be modulated by the IBL color in the view direction.
         bool enabled = false;               //!< enable or disable fog
     };
 
     /**
      * Options to control Depth of Field (DoF) effect in the scene.
+     *
+     * cocScale can be used to set the depth of field blur independently from the camera
+     * aperture, e.g. for artistic reasons. This can be achieved by setting:
+     *      cocScale = cameraAperture / desiredDoFAperture
+     *
+     * @see Camera
      */
     struct DepthOfFieldOptions {
         float focusDistance = 10.0f;        //!< focus distance in world units
-        float blurScale = 1.0f;             //!< a scale factor for the amount of blur
+        float cocScale = 1.0f;              //!< circle of confusion scale factor (amount of blur)
         float maxApertureDiameter = 0.01f;  //!< maximum aperture diameter in meters (zero to disable rotation)
         bool enabled = false;               //!< enable or disable depth of field effect
     };
@@ -206,7 +211,7 @@ public:
     };
 
     /**
-     * Options for Ambient Occlusion
+     * Options for screen space Ambient Occlusion (SSAO)
      * @see setAmbientOcclusion()
      */
     struct AmbientOcclusionOptions {
@@ -217,14 +222,17 @@ public:
         float intensity = 1.0f; //!< Strength of the Ambient Occlusion effect.
         QualityLevel quality = QualityLevel::LOW; //!< affects # of samples used for AO.
         QualityLevel upsampling = QualityLevel::LOW; //!< affects AO buffer upsampling quality.
+        bool enabled = false;    //!< enables or disables screen-space ambient occlusion
     };
 
     /**
-     * List of available ambient occlusion techniques
-    */
-    enum class AmbientOcclusion : uint8_t {
-        NONE = 0,       //!< No Ambient Occlusion
-        SSAO = 1        //!< Basic, sampling SSAO
+     * Options for Temporal Anti-aliasing (TAA)
+     * @see setTemporalAntiAliasingOptions()
+     */
+    struct TemporalAntiAliasingOptions {
+        float filterWidth = 1.0f;   //!< reconstruction filter width typically between 0 (sharper, aliased) and 1 (smoother)
+        float feedback = 0.04f;     //!< history feedback, between 0 (maximum temporal AA) and 1 (no temporal AA).
+        bool enabled = false;       //!< enables or disables temporal anti-aliasing
     };
 
     /**
@@ -245,28 +253,13 @@ public:
     };
 
     /**
-     * List of available tone-mapping operators
-     *
-     * @deprecated See ColorGrading
+     * List of available shadow mapping techniques.
+     * @see setShadowType
      */
-    enum class UTILS_DEPRECATED ToneMapping : uint8_t {
-        LINEAR = 0,     //!< Linear tone mapping (i.e. no tone mapping)
-        ACES = 1,       //!< ACES tone mapping
+    enum class ShadowType : uint8_t {
+        PCF,        //!< percentage-closer filtered shadows (default)
+        VSM         //!< variance shadows
     };
-
-    /**
-     * Activates or deactivates ambient occlusion.
-     *
-     * @param ambientOcclusion Type of ambient occlusion to use.
-     */
-    void setAmbientOcclusion(AmbientOcclusion ambientOcclusion) noexcept;
-
-    /**
-     * Queries the type of ambient occlusion active for this View.
-     *
-     * @return ambient occlusion type.
-     */
-    AmbientOcclusion getAmbientOcclusion() const noexcept;
 
     /**
      * Sets ambient occlusion options.
@@ -432,6 +425,9 @@ public:
      * By default, the view's associated render target is nullptr, which corresponds to the
      * SwapChain associated with the engine.
      *
+     * A view with a custom render target cannot rely on Renderer::ClearOptions, which only apply
+     * to the SwapChain. Such view can use a Skybox instead.
+     *
      * @param renderTarget Render target associated with view, or nullptr for the swap chain.
      */
     void setRenderTarget(RenderTarget* renderTarget) noexcept;
@@ -491,25 +487,18 @@ public:
     AntiAliasing getAntiAliasing() const noexcept;
 
     /**
-     * Enables or disables tone-mapping in the post-processing stage. Enabled by default.
+     * Enables or disable temporal anti-aliasing (TAA). Disabled by default.
      *
-     * @param type Tone-mapping function.
-     *
-     * @deprecated Use setColorGrading instead
-     * @see setColorGrading
+     * @param options temporal anti-aliasing options
      */
-    UTILS_DEPRECATED
-    void setToneMapping(ToneMapping type) noexcept;
+    void setTemporalAntiAliasingOptions(TemporalAntiAliasingOptions options) noexcept;
 
     /**
-     * Returns the tone-mapping function.
-     * @return tone-mapping function.
+     * Returns temporal anti-aliasing options.
      *
-     * @deprecated Use getColorGrading instead
-     * @see getColorGrading
+     * @return temporal anti-aliasing options
      */
-    UTILS_DEPRECATED
-    ToneMapping getToneMapping() const noexcept;
+    TemporalAntiAliasingOptions const& getTemporalAntiAliasingOptions() const noexcept;
 
     /**
      * Sets this View's color grading transforms.
@@ -654,6 +643,15 @@ public:
      */
     void setDynamicLightingOptions(float zLightNear, float zLightFar) noexcept;
 
+    /*
+     * Set the shadow mapping technique this View uses.
+     *
+     * The ShadowType affects all the shadows seen within the View.
+     *
+     * @warning This API is still experimental and subject to change.
+     */
+    void setShadowType(ShadowType shadow) noexcept;
+
     /**
      * Enables or disables post processing. Enabled by default.
      *
@@ -711,6 +709,67 @@ public:
 
     //! debugging: returns a Camera from the point of view of *the* dominant directional light used for shadowing.
     Camera const* getDirectionalLightCamera() const noexcept;
+
+
+    /**
+     * List of available tone-mapping operators
+     *
+     * @deprecated See ColorGrading
+     */
+    enum class UTILS_DEPRECATED ToneMapping : uint8_t {
+        LINEAR = 0,     //!< Linear tone mapping (i.e. no tone mapping)
+        ACES = 1,       //!< ACES tone mapping
+    };
+
+    /**
+     * List of available ambient occlusion techniques
+     * @deprecated use AmbientOcclusionOptions::enabled instead
+     */
+    enum class UTILS_DEPRECATED AmbientOcclusion : uint8_t {
+        NONE = 0,       //!< No Ambient Occlusion
+        SSAO = 1        //!< Basic, sampling SSAO
+    };
+
+    /**
+      * Enables or disables tone-mapping in the post-processing stage. Enabled by default.
+      *
+      * @param type Tone-mapping function.
+      *
+      * @deprecated Use setColorGrading instead
+      * @see setColorGrading
+      */
+    UTILS_DEPRECATED
+    void setToneMapping(ToneMapping type) noexcept;
+
+    /**
+     * Returns the tone-mapping function.
+     * @return tone-mapping function.
+     *
+     * @deprecated Use getColorGrading instead
+     * @see getColorGrading
+     */
+    UTILS_DEPRECATED
+    ToneMapping getToneMapping() const noexcept;
+
+    /**
+     * Activates or deactivates ambient occlusion.
+     * @deprecated use setAmbientOcclusionOptions() instead
+     * @see setAmbientOcclusionOptions
+     *
+     * @param ambientOcclusion Type of ambient occlusion to use.
+     */
+    UTILS_DEPRECATED
+    void setAmbientOcclusion(AmbientOcclusion ambientOcclusion) noexcept;
+
+    /**
+     * Queries the type of ambient occlusion active for this View.
+     * @deprecated use getAmbientOcclusionOptions() instead
+     * @see getAmbientOcclusionOptions
+     *
+     * @return ambient occlusion type.
+     */
+    UTILS_DEPRECATED
+    AmbientOcclusion getAmbientOcclusion() const noexcept;
 };
 
 

@@ -31,7 +31,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.google.android.filament:filament-android:1.8.1'
+    implementation 'com.google.android.filament:filament-android:1.9.0'
 }
 ```
 
@@ -63,7 +63,7 @@ A much smaller alternative to `filamat-android` that can only generate OpenGL sh
 iOS projects can use CocoaPods to install the latest release:
 
 ```
-pod 'Filament', '~> 1.8.1'
+pod 'Filament', '~> 1.9.0'
 ```
 
 ### Snapshots
@@ -143,6 +143,8 @@ Here are a few screenshots of applications that use Filament in production:
 - Physical light units
 - Point lights, spot lights and directional light
 - Spot and directional light shadows
+- Cascaded shadows
+- VSM or PCF shadows
 - Contact shadows
 - Screen-space ambient occlusion
 - Screen-space refraction
@@ -152,7 +154,7 @@ Here are a few screenshots of applications that use Filament in production:
 - Multiple tone mappers: ACES, filmic, etc.
 - Color grading: white balance, channel mixer, shadows/mid-tones/highlights, ASC CDL,
   contrast, saturation, etc.
-- FXAA, MSAA and specular anti-aliasing
+- TAA, FXAA, MSAA and specular anti-aliasing
 - Dynamic resolution
 
 ## Rendering with Filament

@@ -122,6 +122,14 @@ struct Viewport {
 };
 
 /**
+ * Specifies the mapping of the near and far clipping plane to window coordinates.
+ */
+struct DepthRange {
+    float near = 0.0f;    //!< mapping of the near plane to window coordinates.
+    float far = 1.0f;     //!< mapping of the far plane to window coordinates.
+};
+
+/**
  * Error codes for Fence::wait()
  * @see Fence, Fence::wait()
  */
@@ -505,6 +513,20 @@ enum class TextureSwizzle {
     CHANNEL_3
 };
 
+//! returns whether this format a depth format
+static constexpr bool isDepthFormat(TextureFormat format) noexcept {
+    switch (format) {
+        case TextureFormat::DEPTH32F:
+        case TextureFormat::DEPTH24:
+        case TextureFormat::DEPTH16:
+        case TextureFormat::DEPTH32F_STENCIL8:
+        case TextureFormat::DEPTH24_STENCIL8:
+            return true;
+        default:
+            return false;
+    }
+}
+
 //! returns whether this format a compressed format
 static constexpr bool isCompressedFormat(TextureFormat format) noexcept {
     return format >= TextureFormat::EAC_R11;
@@ -736,8 +758,7 @@ struct RasterState {
 
     // note: clang reduces this entire function to a simple load/mask/compare
     bool hasBlending() const noexcept {
-        // there could be other cases where blending would end-up being disabled,
-        // but this is common and easy to check
+        // This is used to decide if blending needs to be enabled in the h/w
         return !(blendEquationRGB == BlendEquation::ADD &&
                  blendEquationAlpha == BlendEquation::ADD &&
                  blendFunctionSrcRGB == BlendFunction::ONE &&
@@ -829,12 +850,13 @@ struct RenderPassParams {
     RenderPassFlags flags{};    //!< operations performed on the buffers for this pass
 
     Viewport viewport{};        //!< viewport for this pass
+    DepthRange depthRange{};    //!< depth range for this pass
 
     //! Color to use to clear the COLOR buffer. RenderPassFlags::clear must be set.
     filament::math::float4 clearColor = {};
 
     //! Depth value to clear the depth buffer with
-    double clearDepth = 1.0;
+    double clearDepth = 0.0;
 
     //! Stencil value to clear the stencil buffer with
     uint32_t clearStencil = 0;

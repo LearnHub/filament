@@ -15,11 +15,27 @@ option(FILAMENT_ENABLE_JAVA "Compile Java projects, requires a JDK and the JAVA_
 
 option(FILAMENT_USE_EXTERNAL_GLES3 "Experimental: Compile Filament against OpenGL ES 3" OFF)
 
-option(FILAMENT_USE_SWIFTSHADER "Experimental: Compile Filament against SwiftShader" OFF)
+option(FILAMENT_USE_SWIFTSHADER "Compile Filament against SwiftShader" OFF)
 
 option(FILAMENT_ENABLE_LTO "Enable link-time optimizations if supported by the compiler" OFF)
 
 option(FILAMENT_SKIP_SAMPLES "Don't build samples" OFF)
+
+set(FILAMENT_PER_RENDER_PASS_ARENA_SIZE_IN_MB "2" CACHE STRING
+    "Per render pass arena size. Must be roughly 1 MB larger than FILAMENT_PER_FRAME_COMMANDS_SIZE_IN_MB, default 2."
+)
+
+set(FILAMENT_PER_FRAME_COMMANDS_SIZE_IN_MB "1" CACHE STRING
+    "Size of the high-level draw commands buffer. Rule of thumb, 1 MB less than FILAMENT_PER_RENDER_PASS_ARENA_SIZE_IN_MB, default 1."
+)
+
+set(FILAMENT_MIN_COMMAND_BUFFERS_SIZE_IN_MB "1" CACHE STRING
+    "Size of the command-stream buffer. As a rule of thumb use the same value as FILAMENT_PER_FRRAME_COMMANDS_SIZE_IN_MB, default 1."
+)
+
+set(FILAMENT_OPENGL_HANDLE_ARENA_SIZE_IN_MB "2" CACHE STRING
+    "Size of the OpenGL handle arena, default 2."
+)
 
 # ==================================================================================================
 # CMake policies
@@ -67,7 +83,7 @@ if (UNIX AND NOT APPLE AND NOT ANDROID AND NOT WEBGL)
     set(LINUX TRUE)
 endif()
 
-if (ANDROID OR WEBGL OR IOS OR FILAMENT_USE_SWIFTSHADER)
+if (ANDROID OR WEBGL OR IOS)
     set(IS_MOBILE_TARGET TRUE)
 endif()
 
@@ -195,9 +211,9 @@ endif()
 # ==================================================================================================
 # General compiler flags
 # ==================================================================================================
-set(CXX_STANDARD "-std=c++14")
+set(CXX_STANDARD "-std=c++17")
 if (WIN32)
-    set(CXX_STANDARD "/std:c++14")
+    set(CXX_STANDARD "/std:c++17")
 endif()
 
 if (MSVC)
@@ -212,8 +228,7 @@ if (FILAMENT_USE_EXTERNAL_GLES3)
 endif()
 
 if (FILAMENT_USE_SWIFTSHADER)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DSWIFTSHADER")
-    set(EGL TRUE)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DFILAMENT_USE_SWIFTSHADER")
 endif()
 
 if (WIN32)
@@ -222,7 +237,7 @@ endif()
 
 if (LINUX)
     option(USE_STATIC_LIBCXX "Link against the static runtime libraries." ON)
-    if (${USE_STATIC_LIBCXX}) 
+    if (${USE_STATIC_LIBCXX})
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
         link_libraries("-static-libgcc -static-libstdc++")
         link_libraries(libc++.a)
@@ -335,7 +350,7 @@ endif()
 
 # By default, build with Vulkan support on desktop platforms, although clients must request to use
 # it at run time.
-if (WIN32 OR WEBGL OR IOS OR FILAMENT_USE_SWIFTSHADER)
+if (WIN32 OR WEBGL OR IOS)
     option(FILAMENT_SUPPORTS_VULKAN "Include the Vulkan backend" OFF)
 else()
     option(FILAMENT_SUPPORTS_VULKAN "Include the Vulkan backend" ON)
@@ -468,20 +483,20 @@ endif()
 # "bluevk" and "samples" targets.
 # ==================================================================================================
 
-if (FILAMENT_SUPPORTS_VULKAN AND APPLE)
+if (FILAMENT_USE_SWIFTSHADER)
+    if (NOT FILAMENT_SUPPORTS_VULKAN)
+        message(ERROR "SwiftShader is only useful when Vulkan is enabled.")
+    endif()
+    find_library(SWIFTSHADER_VK NAMES vk_swiftshader HINTS "$ENV{SWIFTSHADER_LD_LIBRARY_PATH}")
+    message(STATUS "Found SwiftShader VK library in: ${SWIFTSHADER_VK}.")
+    add_definitions(-DFILAMENT_VKLIBRARY_PATH=\"${SWIFTSHADER_VK}\")
+elseif (FILAMENT_SUPPORTS_VULKAN AND APPLE)
     find_library(Vulkan_LIBRARY NAMES vulkan HINTS "$ENV{VULKAN_SDK}/lib" "$ENV{VULKAN_SDK}/macOS/lib")
     if (Vulkan_LIBRARY)
         set(Vulkan_FOUND ON)
         message(STATUS "Found Vulkan library in SDK: ${Vulkan_LIBRARY}.")
         add_definitions(-DFILAMENT_VKLIBRARY_PATH=\"${Vulkan_LIBRARY}\")
     endif()
-endif()
-
-if (FILAMENT_USE_SWIFTSHADER)
-    find_library(SWIFTSHADER_EGL NAMES EGL HINTS "$ENV{SWIFTSHADER_LD_LIBRARY_PATH}")
-    find_library(SWIFTSHADER_GLES NAMES GLESv3 GLESv2 HINTS "$ENV{SWIFTSHADER_LD_LIBRARY_PATH}")
-    message(STATUS "Found SwiftShader EGL library in: ${SWIFTSHADER_EGL}.")
-    message(STATUS "Found SwiftShader GLES library in: ${SWIFTSHADER_GLES}.")
 endif()
 
 # ==================================================================================================
@@ -613,10 +628,6 @@ if (IS_HOST_PLATFORM)
     add_subdirectory(${TOOLS}/resgen)
     add_subdirectory(${TOOLS}/roughness-prefilter)
     add_subdirectory(${TOOLS}/specular-color)
-endif()
-
-if (FILAMENT_USE_SWIFTSHADER)
-    add_subdirectory(${EXTERNAL}/swiftshader/tnt)
 endif()
 
 # Generate exported executables for cross-compiled builds (Android, WebGL, and iOS)

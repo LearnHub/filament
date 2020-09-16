@@ -16,7 +16,6 @@
 
 #include "details/Camera.h"
 
-#include "components/CameraManager.h"
 #include "components/TransformManager.h"
 
 #include "details/Engine.h"
@@ -46,7 +45,8 @@ FCamera::FCamera(FEngine& engine, Entity e)
 
 void UTILS_NOINLINE FCamera::setProjection(double fov, double aspect, double near, double far,
         Camera::Fov direction) noexcept {
-    double w, h;
+    double w;
+    double h;
     double s = std::tan(fov * (F_PI / 360.0)) * near;
     if (direction == Fov::VERTICAL) {
         w = s * aspect;
@@ -61,8 +61,7 @@ void UTILS_NOINLINE FCamera::setProjection(double fov, double aspect, double nea
 void FCamera::setLensProjection(double focalLength, double aspect, double near, double far) noexcept {
     // a 35mm camera has a 36x24mm wide frame size
     double theta = 2.0 * std::atan(SENSOR_SIZE * 1000.0f / (2.0 * focalLength));
-    theta *= 180.0 / math::F_PI;
-    FCamera::setProjection(theta, aspect, near, far, Fov::VERTICAL);
+    FCamera::setProjection(theta * math::d::RAD_TO_DEG, aspect, near, far, Fov::VERTICAL);
 }
 
 /*
@@ -301,11 +300,11 @@ void Camera::setScaling(math::double4 const& scaling) noexcept {
     upcast(this)->setScaling(scaling);
 }
 
-const mat4 Camera::getProjectionMatrix() const noexcept {
+mat4 Camera::getProjectionMatrix() const noexcept {
     return upcast(this)->getProjectionMatrix();
 }
 
-const mat4 Camera::getCullingProjectionMatrix() const noexcept {
+mat4 Camera::getCullingProjectionMatrix() const noexcept {
     return upcast(this)->getCullingProjectionMatrix();
 }
 

@@ -347,7 +347,7 @@ inline float3 vibrance(float3 v, float vibrance) {
 
 UTILS_ALWAYS_INLINE
 inline float3 curves(float3 v, float3 shadowGamma, float3 midPoint, float3 highlightScale) {
-    // "Practical HDR and Wide Color Techniques in Gran Turismo SPORT", Uchimura 2018
+    // "Practical HDR and Wide Color Techniques in Gran Turismo SPORT", Uchimura 2018
     float3 d = 1.0f / (pow(midPoint, shadowGamma - 1.0f));
     float3 dark = pow(v, shadowGamma) * d;
     float3 light = highlightScale * (v - midPoint) + midPoint;
@@ -474,18 +474,18 @@ FColorGrading::FColorGrading(FEngine& engine, const Builder& builder) {
     // Slices are 8 KiB (128 cache lines) apart.
     // This takes about 3-6ms on Android in Release
     JobSystem& js = engine.getJobSystem();
-    auto slices = js.createJob();
+    auto *slices = js.createJob();
     for (size_t b = 0; b < config.lutDimension; b++) {
-        auto job = js.createJob(slices, [data, converted, b, &config, builder](JobSystem&, JobSystem::Job*) {
+        auto *job = js.createJob(slices, [data, converted, b, &config, builder](JobSystem&, JobSystem::Job*) {
             half4* UTILS_RESTRICT p = (half4*) data + b * config.lutDimension * config.lutDimension;
             for (size_t g = 0; g < config.lutDimension; g++) {
                 for (size_t r = 0; r < config.lutDimension; r++) {
-                    float3 v = float3{r, g, b} * (1.0f / (config.lutDimension - 1u));
+                    float3 v = float3{ r, g, b } * (1.0f / float(config.lutDimension - 1u));
 
                     // LogC encoding
                     v = LogC_to_linear(v);
 
-                    // TODO: Peformed in sRGB, should be in Rec.2020 or AP1
+                    // TODO: Performed in sRGB, should be in Rec.2020 or AP1
                     if (builder->hasAdjustments) {
                         // White balance
                         v = chromaticAdaptation(v, builder->whiteBalance);
@@ -554,7 +554,7 @@ FColorGrading::FColorGrading(FEngine& engine, const Builder& builder) {
                 half4* UTILS_RESTRICT src = (half4*) data + b * config.lutDimension * config.lutDimension;
                 // we use a vectorize width of 8 because, on ARMv8 it allows the compiler to write eight
                 // 32-bits results in one go.
-                const size_t count = (config.lutDimension * config.lutDimension) & ~0x7; // tell the compiler that we're a multiple of 8
+                const size_t count = (config.lutDimension * config.lutDimension) & ~0x7u; // tell the compiler that we're a multiple of 8
                 #pragma clang loop vectorize_width(8)
                 for (size_t i = 0; i < count; ++i) {
                     float4 v{ src[i] };
@@ -576,7 +576,7 @@ FColorGrading::FColorGrading(FEngine& engine, const Builder& builder) {
     //std::chrono::duration<float, std::milli> duration = std::chrono::steady_clock::now() - now;
     //slog.d << "LUT generation time: " << duration.count() << " ms" << io::endl;
 
-    mLutHandle = driver.createTexture(SamplerType::SAMPLER_3D, 1, textureFormat, 0,
+    mLutHandle = driver.createTexture(SamplerType::SAMPLER_3D, 1, textureFormat, 1,
             config.lutDimension, config.lutDimension, config.lutDimension, TextureUsage::DEFAULT);
 
     if (converted) {

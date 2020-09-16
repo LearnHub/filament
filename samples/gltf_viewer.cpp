@@ -440,7 +440,7 @@ static void colorGradingUI(App& app) {
                 "Low\0Medium\0High\0Ultra\0\0");
         ImGui::Combo("Tone-mapping", &colorGrading.toneMapping,
                 "Linear\0ACES (legacy)\0ACES\0Filmic\0Uchimura\0Reinhard\0Display Range\0\0");
-        if (ImGui::CollapsingHeader("While balance")) {
+        if (ImGui::CollapsingHeader("White balance")) {
             ImGui::SliderInt("Temperature", &colorGrading.temperature, -100, 100);
             ImGui::SliderInt("Tint", &colorGrading.tint, -100, 100);
         }
@@ -721,7 +721,7 @@ int main(int argc, char** argv) {
                 ImGui::SliderFloat("ISO", &app.viewOptions.cameraISO, 25.0f, 6400.0f);
                 ImGui::Checkbox("DoF", &app.dofOptions.enabled);
                 ImGui::SliderFloat("Focus distance", &app.dofOptions.focusDistance, 0.0f, 30.0f);
-                ImGui::SliderFloat("Blur scale", &app.dofOptions.blurScale, 0.1f, 10.0f);
+                ImGui::SliderFloat("Blur scale", &app.dofOptions.cocScale, 0.1f, 10.0f);
 
                 if (ImGui::CollapsingHeader("Vignette")) {
                     ImGui::Checkbox("Enabled##vignetteEnabled", &app.vignetteOptions.enabled);
@@ -775,6 +775,7 @@ int main(int argc, char** argv) {
         engine->destroy(app.scene.groundVertexBuffer);
         engine->destroy(app.scene.groundIndexBuffer);
         engine->destroy(app.scene.groundMaterial);
+        engine->destroy(app.colorGrading);
 
         delete app.viewer;
         delete app.materials;

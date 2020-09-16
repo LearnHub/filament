@@ -22,6 +22,7 @@
 #include "upcast.h"
 
 #include "FrameInfo.h"
+#include "FrameHistory.h"
 #include "UniformBuffer.h"
 
 #include "details/Allocators.h"
@@ -51,7 +52,7 @@ namespace utils {
 class JobSystem;
 } // namespace utils;
 
-// Avoid warnings for using the ToneMapping API, which has been publically deprecated.
+// Avoid warnings for using the ToneMapping API, which has been publicly deprecated.
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -61,6 +62,10 @@ class JobSystem;
 #endif
 
 namespace filament {
+
+namespace fg {
+class ResourceAllocator;
+} // namespace fg;
 
 class FEngine;
 class FMaterialInstance;
@@ -90,7 +95,7 @@ static constexpr uint8_t VISIBLE_SPOT_SHADOW_CASTER_N(size_t n) {
 
 // ORing of all the VISIBLE_SPOT_SHADOW_CASTER bits
 static constexpr uint8_t VISIBLE_SPOT_SHADOW_CASTER =
-        (0xFF >> (sizeof(uint8_t) * 8u - CONFIG_MAX_SHADOW_CASTING_SPOTS)) << 2u;
+        (0xFFu >> (sizeof(uint8_t) * 8u - CONFIG_MAX_SHADOW_CASTING_SPOTS)) << 2u;
 
 // Because we're using a uint8_t for the visibility mask, we're limited to 6 spot light shadows.
 // (2 of the bits are used for visible renderables + directional light shadow casters).
@@ -161,6 +166,7 @@ public:
     void prepareSSAO(backend::Handle<backend::HwTexture> ssao) const noexcept;
     void prepareSSR(backend::Handle<backend::HwTexture> ssr, float refractionLodOffset) const noexcept;
     void prepareStructure(backend::Handle<backend::HwTexture> structure) const noexcept;
+    void prepareShadow(backend::Handle<backend::HwTexture> structure) const noexcept;
     void cleanupRenderPasses() const noexcept;
     void froxelize(FEngine& engine) const noexcept;
     void commitUniforms(backend::DriverApi& driver) const noexcept;
@@ -170,8 +176,10 @@ public:
     bool hasDynamicLighting() const noexcept { return mHasDynamicLighting; }
     bool hasShadowing() const noexcept { return mHasShadowing; }
     bool hasFog() const noexcept { return mFogOptions.enabled && mFogOptions.density > 0.0f; }
+    bool hasVsm() const noexcept { return mShadowType == ShadowType::VSM; }
 
-    void renderShadowMaps(FEngine& engine, FEngine::DriverApi& driver, RenderPass& pass) noexcept;
+    void renderShadowMaps(FrameGraph& fg, FEngine& engine, FEngine::DriverApi& driver,
+            RenderPass& pass) noexcept;
 
     void updatePrimitivesLod(
             FEngine& engine, const CameraInfo& camera,
@@ -205,6 +213,16 @@ public:
 
     AntiAliasing getAntiAliasing() const noexcept {
         return mAntiAliasing;
+    }
+
+    void setTemporalAntiAliasingOptions(TemporalAntiAliasingOptions options) noexcept {
+        options.feedback = math::clamp(options.feedback, 0.0f, 1.0f);
+        options.filterWidth = std::max(0.2f, options.filterWidth); // below 0.2 causes issues
+        mTemporalAntiAliasingOptions = options;
+    }
+
+    const TemporalAntiAliasingOptions& getTemporalAntiAliasingOptions() const noexcept {
+        return mTemporalAntiAliasingOptions;
     }
 
     void setToneMapping(ToneMapping type) noexcept {
@@ -258,11 +276,11 @@ public:
     }
 
     void setAmbientOcclusion(AmbientOcclusion ambientOcclusion) noexcept {
-        mAmbientOcclusion = ambientOcclusion;
+        mAmbientOcclusionOptions.enabled = ambientOcclusion == AmbientOcclusion::SSAO;
     }
 
     AmbientOcclusion getAmbientOcclusion() const noexcept {
-        return mAmbientOcclusion;
+        return mAmbientOcclusionOptions.enabled ? AmbientOcclusion::SSAO : AmbientOcclusion::NONE;
     }
 
     void setAmbientOcclusionOptions(AmbientOcclusionOptions options) noexcept {
@@ -276,6 +294,14 @@ public:
         mAmbientOcclusionOptions = options;
     }
 
+    ShadowType getShadowType() const noexcept {
+        return mShadowType;
+    }
+
+    void setShadowType(ShadowType shadow) noexcept {
+        mShadowType = shadow;
+    }
+
     AmbientOcclusionOptions const& getAmbientOcclusionOptions() const noexcept {
         return mAmbientOcclusionOptions;
     }
@@ -283,6 +309,7 @@ public:
     void setBloomOptions(BloomOptions options) noexcept {
         options.dirtStrength = math::saturate(options.dirtStrength);
         options.levels = math::clamp(options.levels, uint8_t(3), uint8_t(12));
+        options.highlight = std::max(10.0f, options.highlight);
         mBloomOptions = options;
     }
 
@@ -306,7 +333,7 @@ public:
 
     void setDepthOfFieldOptions(DepthOfFieldOptions options) noexcept {
         options.focusDistance = std::max(0.0f, options.focusDistance);
-        options.blurScale = std::max(0.0f, options.blurScale);
+        options.cocScale = std::max(0.0f, options.cocScale);
         options.maxApertureDiameter = std::max(0.0f, options.maxApertureDiameter);
         mDepthOfFieldOptions = options;
     }
@@ -362,6 +389,16 @@ public:
     backend::SamplerGroup& getViewSamplers() const { return mPerViewSb; }
     UniformBuffer& getShadowUniforms() const { return mShadowUb; }
 
+    // Returns the frame history FIFO. This is typically used by the FrameGraph to access
+    // previous frame data.
+    FrameHistory& getFrameHistory() noexcept { return mFrameHistory; }
+    FrameHistory const& getFrameHistory() const noexcept { return mFrameHistory; }
+
+    // Clean-up the oldest frame and save the current frame information.
+    // This is typically called after all operations for this View's rendering are complete.
+    // (e.g.: after the FrameFraph execution).
+    void commitFrameHistory(FEngine& engine) noexcept;
+
 private:
     void prepareVisibleRenderables(utils::JobSystem& js,
             Frustum const& frustum, FScene::RenderableSoa& renderableData) const noexcept;
@@ -373,7 +410,7 @@ private:
     static void computeVisibilityMasks(
             uint8_t visibleLayers, uint8_t const* layers,
             FRenderableManager::Visibility const* visibility, uint8_t* visibleMask,
-            size_t count) ;
+            size_t count);
 
     void bindPerViewUniformsAndSamplers(FEngine::DriverApi& driver) const noexcept {
         driver.bindUniformBuffer(BindingPoints::PER_VIEW, mPerViewUbh);
@@ -382,10 +419,16 @@ private:
         driver.bindSamplers(BindingPoints::PER_VIEW, mPerViewSbh);
     }
 
+    // Clean-up the whole history, free all resources. This is typically called when the View is
+    // being terminated.
+    void drainFrameHistory(FEngine& engine) noexcept;
+
     // we don't inline this one, because the function is quite large and there is not much to
     // gain from inlining.
     static FScene::RenderableSoa::iterator partition(
-            FScene::RenderableSoa::iterator begin, FScene::RenderableSoa::iterator end, uint8_t mask) noexcept;
+            FScene::RenderableSoa::iterator begin,
+            FScene::RenderableSoa::iterator end,
+            uint8_t mask) noexcept;
 
     // these are accessed in the render loop, keep together
     backend::Handle<backend::HwSamplerGroup> mPerViewSbh;
@@ -416,15 +459,17 @@ private:
     Dithering mDithering = Dithering::TEMPORAL;
     bool mShadowingEnabled = true;
     bool mHasPostProcessPass = true;
-    AmbientOcclusion mAmbientOcclusion = AmbientOcclusion::NONE;
     AmbientOcclusionOptions mAmbientOcclusionOptions{};
+    ShadowType mShadowType = ShadowType::PCF;
     BloomOptions mBloomOptions;
     FogOptions mFogOptions;
     DepthOfFieldOptions mDepthOfFieldOptions;
     VignetteOptions mVignetteOptions;
+    TemporalAntiAliasingOptions mTemporalAntiAliasingOptions;
     BlendMode mBlendMode = BlendMode::OPAQUE;
     const FColorGrading* mColorGrading = nullptr;
     const FColorGrading* mDefaultColorGrading = nullptr;
+    math::float2 mClipControl{};
 
     DynamicResolutionOptions mDynamicResolution;
     math::float2 mScale = 1.0f;
@@ -435,6 +480,8 @@ private:
     mutable UniformBuffer mPerViewUb;
     mutable UniformBuffer mShadowUb;
     mutable backend::SamplerGroup mPerViewSb;
+
+    mutable FrameHistory mFrameHistory{};
 
     utils::CString mName;
 

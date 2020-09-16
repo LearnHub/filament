@@ -42,8 +42,9 @@ struct VulkanProgram : public HwProgram {
 // which are not representative when this is the default render target.
 struct VulkanRenderTarget : private HwRenderTarget {
     // Creates an offscreen render target.
-    VulkanRenderTarget(VulkanContext& context, uint32_t width, uint32_t height,
-            VulkanAttachment color[MRT::TARGET_COUNT], VulkanAttachment depthStencil[2]);
+    VulkanRenderTarget(VulkanContext& context, uint32_t width, uint32_t height, uint8_t samples,
+            VulkanAttachment color[MRT::TARGET_COUNT], VulkanAttachment depthStencil[2],
+            VulkanStagePool& stagePool);
 
     // Creates a special "default" render target (i.e. associated with the swap chain)
     explicit VulkanRenderTarget(VulkanContext& context);
@@ -54,14 +55,20 @@ struct VulkanRenderTarget : private HwRenderTarget {
     void transformClientRectToPlatform(VkViewport* bounds) const;
     VkExtent2D getExtent() const;
     VulkanAttachment getColor(int target) const;
+    VulkanAttachment getMsaaColor(int target) const;
     VulkanAttachment getDepth() const;
+    VulkanAttachment getMsaaDepth() const;
     int getColorTargetCount() const;
     bool invalidate();
+    uint8_t getSamples() const { return mSamples; }
 private:
     VulkanAttachment mColor[MRT::TARGET_COUNT] = {};
     VulkanAttachment mDepth = {};
     VulkanContext& mContext;
-    bool mOffscreen;
+    const bool mOffscreen;
+    const uint8_t mSamples;
+    VulkanAttachment mMsaaAttachments[MRT::TARGET_COUNT] = {};
+    VulkanAttachment mMsaaDepthAttachment = {};
 };
 
 struct VulkanSwapChain : public HwSwapChain {
@@ -114,6 +121,9 @@ struct VulkanTexture : public HwTexture {
     void updateCubeImage(const PixelBufferDescriptor& data, const FaceOffsets& faceOffsets,
             int miplevel);
 
+    // Gets or creates a cached image view for a single miplevel and array layer.
+    VkImageView getImageView(int level, int layer, VkImageAspectFlags aspect);
+
     // Issues a barrier that transforms the layout of the image, e.g. from a CPU-writeable
     // layout to a GPU-readable layout.
     static void transitionImageLayout(VkCommandBuffer cmdbuffer, VkImage image,
@@ -132,6 +142,13 @@ private:
             uint32_t width, uint32_t height, uint32_t depth,
             FaceOffsets const* faceOffsets, uint32_t miplevel);
 
+    struct ImageViewCacheEntry {
+        int level;
+        int layer;
+        VkImageView view;
+    };
+
+    std::vector<ImageViewCacheEntry> mImageViews;
     VkImageAspectFlags mAspect;
     VulkanContext& mContext;
     VulkanStagePool& mStagePool;

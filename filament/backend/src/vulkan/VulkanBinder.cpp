@@ -346,7 +346,8 @@ void VulkanBinder::bindRasterState(const RasterState& rasterState) noexcept {
             ds0.depthWriteEnable != ds1.depthWriteEnable ||
             ds0.depthCompareOp != ds1.depthCompareOp ||
             ds0.stencilTestEnable != ds1.stencilTestEnable ||
-            ms0.rasterizationSamples != ms1.rasterizationSamples
+            ms0.rasterizationSamples != ms1.rasterizationSamples ||
+            ms0.alphaToCoverageEnable != ms1.alphaToCoverageEnable
     ) {
         mDirtyPipeline = true;
         mPipelineKey.rasterState = rasterState;
@@ -518,16 +519,17 @@ void VulkanBinder::resetBindings() noexcept {
 }
 
 // Frees up old descriptor sets and pipelines, then nulls out their key.
+//
+// This method is designed to be called once per frame, and our notion of "time" is actually a
+// frame counter. Frames are a better metric than wall clock because we know with certainty that
+// objects last bound more than n frames ago are no longer in use (due to existing fences).
 void VulkanBinder::gc() noexcept {
-    // This method is designed to be called once per frame, and our notion of "time" is actually a
-    // frame counter. Frames are a better metric than wall clock because we know with certainty that
-    // objects last bound more than n frames ago are no longer in use (due to existing fences).
-    mCurrentTime++;
     // If this is one of the first few frames, return early to avoid wrapping unsigned integers.
-    if (mCurrentTime <= TIME_BEFORE_EVICTION) {
+    if (++mCurrentTime <= TIME_BEFORE_EVICTION) {
         return;
     }
     const uint32_t evictTime = mCurrentTime - TIME_BEFORE_EVICTION;
+
     // Due to robin_map restrictions, we cannot use auto or a range-based loop.
     for (decltype(mDescriptorBundles)::const_iterator iter = mDescriptorBundles.begin();
             iter != mDescriptorBundles.end();) {
@@ -726,6 +728,7 @@ static VulkanBinder::RasterState createDefaultRasterState() {
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     multisampling.pSampleMask = nullptr;
+    multisampling.alphaToCoverageEnable = true;
 
     return VulkanBinder::RasterState {
         rasterization,

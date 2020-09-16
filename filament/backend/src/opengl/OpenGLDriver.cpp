@@ -35,12 +35,6 @@
 #include <emscripten.h>
 #endif
 
-// To emulate EXT_multisampled_render_to_texture properly we need to be able to copy from
-// a non-ms texture to an ms attachment. This is only allowed with OpenGL (not GLES), which
-// would be fine for us. However, this is also not trivial to implement in Metal so for now
-// we don't want to rely on it.
-#define ALLOW_REVERSE_MULTISAMPLE_RESOLVE false
-
 // We can only support this feature on OpenGL ES 3.1+
 // Support is currently disabled as we don't need it
 #define TEXTURE_2D_MULTISAMPLE_SUPPORTED false
@@ -137,10 +131,10 @@ OpenGLDriver::DebugMarker::~DebugMarker() noexcept {
 
 OpenGLDriver::OpenGLDriver(OpenGLPlatform* platform) noexcept
         : DriverBase(new ConcreteDispatcher<OpenGLDriver>()),
-          mHandleArena("Handles", 2U * 1024U * 1024U), // TODO: set the amount in configuration
+          mHandleArena("Handles", FILAMENT_OPENGL_HANDLE_ARENA_SIZE_IN_MB * 1024U * 1024U), // TODO: set the amount in configuration
           mSamplerMap(32),
           mPlatform(*platform) {
-
+  
     std::fill(mSamplerBindings.begin(), mSamplerBindings.end(), nullptr);
 
     // set a reasonable default value for our stream array
@@ -779,6 +773,20 @@ void OpenGLDriver::framebufferTexture(backend::TargetBufferInfo const& binfo,
     assert(rt->width  <= valueForLevel(binfo.level, t->width) &&
            rt->height <= valueForLevel(binfo.level, t->height));
 
+    // depth/stencil attachment must match the rendertarget sample count
+    // this is because EXT_multisampled_render_to_texture doesn't guarantee depth/stencil
+    // is resolved.
+    bool attachmentTypeNotSupportedByMSRTT = false;
+    switch (attachment) {
+        case GL_DEPTH_ATTACHMENT:
+        case GL_STENCIL_ATTACHMENT:
+        case GL_DEPTH_STENCIL_ATTACHMENT:
+            attachmentTypeNotSupportedByMSRTT = rt->gl.samples != t->samples;
+            break;
+        default:
+            break;
+    }
+
     auto& gl = mContext;
 
     if (any(t->usage & TextureUsage::SAMPLEABLE)) {
@@ -828,16 +836,19 @@ void OpenGLDriver::framebufferTexture(backend::TargetBufferInfo const& binfo,
             CHECK_GL_ERROR(utils::slog.e)
         } else
 #ifdef GL_EXT_multisampled_render_to_texture
-            if (gl.ext.EXT_multisampled_render_to_texture && t->depth <= 1) {
-                assert(rt->gl.samples > 1);
-                // We have a multi-sample rendertarget and we have EXT_multisampled_render_to_texture,
-                // so, we can directly use a 1-sample texture as attachment, multi-sample resolve,
-                // will happen automagically and efficiently in the driver.
-                // This extension only exists on OpenGL ES.
-                gl.bindFramebuffer(GL_FRAMEBUFFER, rt->gl.fbo);
-                glext::glFramebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER,
-                        attachment, target, t->gl.id, binfo.level, rt->gl.samples);
-            } else
+            // EXT_multisampled_render_to_texture only support GL_COLOR_ATTACHMENT0
+        if (!attachmentTypeNotSupportedByMSRTT && (t->depth <= 1)
+            && ((gl.ext.EXT_multisampled_render_to_texture && attachment == GL_COLOR_ATTACHMENT0)
+                || gl.ext.EXT_multisampled_render_to_texture2)) {
+            assert(rt->gl.samples > 1);
+            // We have a multi-sample rendertarget and we have EXT_multisampled_render_to_texture,
+            // so, we can directly use a 1-sample texture as attachment, multi-sample resolve,
+            // will happen automagically and efficiently in the driver.
+            // This extension only exists on OpenGL ES.
+            gl.bindFramebuffer(GL_FRAMEBUFFER, rt->gl.fbo);
+            glext::glFramebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER,
+                    attachment, target, t->gl.id, binfo.level, rt->gl.samples);
+        } else
 #endif
         { // here we emulate ext.EXT_multisampled_render_to_texture
             assert(rt->gl.samples > 1);
@@ -1501,6 +1512,11 @@ bool OpenGLDriver::isFrameTimeSupported() {
     return mFrameTimeSupported;
 }
 
+math::float2 OpenGLDriver::getClipSpaceParams() {
+    return mContext.ext.EXT_clip_control ?
+            math::float2{ -0.5f, 0.5f } : math::float2{ -1.0f, 0.0f };
+}
+
 // ------------------------------------------------------------------------------------------------
 // Swap chains
 // ------------------------------------------------------------------------------------------------
@@ -1719,9 +1735,8 @@ void OpenGLDriver::setTextureData(GLTexture* t,
     DEBUG_MARKER()
     auto& gl = mContext;
 
-    assert(xoffset + width <= t->width >> level);
-    assert(yoffset + height <= t->height >> level);
-    assert(zoffset + depth <= t->depth);
+    assert(xoffset + width <= std::max(1u, t->width >> level));
+    assert(yoffset + height <= std::max(1u, t->height >> level));
     assert(t->samples <= 1);
 
     if (UTILS_UNLIKELY(t->gl.target == GL_TEXTURE_EXTERNAL_OES)) {
@@ -1752,6 +1767,7 @@ void OpenGLDriver::setTextureData(GLTexture* t,
                     width, height, glFormat, glType, p.buffer);
             break;
         case SamplerType::SAMPLER_3D:
+            assert(zoffset + depth <= std::max(1u, t->depth >> level));
             bindTexture(OpenGLContext::MAX_TEXTURE_UNIT_COUNT - 1, t);
             gl.activeTexture(OpenGLContext::MAX_TEXTURE_UNIT_COUNT - 1);
             assert(t->gl.target == GL_TEXTURE_3D);
@@ -1760,6 +1776,7 @@ void OpenGLDriver::setTextureData(GLTexture* t,
                     width, height, depth, glFormat, glType, p.buffer);
             break;
         case SamplerType::SAMPLER_2D_ARRAY:
+            assert(zoffset + depth <= t->depth);
             // NOTE: GL_TEXTURE_2D_MULTISAMPLE is not allowed
             bindTexture(OpenGLContext::MAX_TEXTURE_UNIT_COUNT - 1, t);
             gl.activeTexture(OpenGLContext::MAX_TEXTURE_UNIT_COUNT - 1);
@@ -2113,18 +2130,12 @@ void OpenGLDriver::beginRenderPass(Handle<HwRenderTarget> rth,
     if (rt->gl.fbo_read) {
         // we have a multi-sample RenderTarget with non multi-sample attachments (i.e. this is the
         // EXT_multisampled_render_to_texture emulation).
-        // We need to perform a "backward" resolve, i.e. load the resolved texture into the tile,
-        // everything must appear as though the multi-sample buffer was lost.
-        if (ALLOW_REVERSE_MULTISAMPLE_RESOLVE) {
-            // We only copy the non msaa buffers that were not discarded or cleared.
-            const TargetBufferFlags discarded = discardFlags | clearFlags;
-            resolvePass(ResolveAction::LOAD, rt, discarded);
-        } else {
-            // However, for now filament specifies that a non multi-sample attachment to a
-            // multi-sample RenderTarget is always discarded. We do this because implementing
-            // the load on Metal is not trivial and it's not a feature we rely on at this time.
-            discardFlags |= rt->gl.resolve;
-        }
+        // We would need to perform a "backward" resolve, i.e. load the resolved texture into the
+        // tile, everything must appear as though the multi-sample buffer was lost.
+        // However Filament specifies that a non multi-sample attachment to a
+        // multi-sample RenderTarget is always discarded. We do this because implementing
+        // the load on Metal is not trivial and it's not a feature we rely on at this time.
+        discardFlags |= rt->gl.resolve;
     }
 
     if (any(clearFlags)) {
@@ -2139,6 +2150,8 @@ void OpenGLDriver::beginRenderPass(Handle<HwRenderTarget> rth,
 
     gl.viewport(params.viewport.left, params.viewport.bottom,
             params.viewport.width, params.viewport.height);
+
+    gl.depthRange(params.depthRange.near, params.depthRange.far);
 
 #ifndef NDEBUG
     // clear the discarded (but not the cleared ones) buffers in debug builds
@@ -2933,12 +2946,10 @@ void OpenGLDriver::blit(TargetBufferFlags buffers,
         GLRenderTarget const* s = handle_cast<GLRenderTarget const*>(src);
         GLRenderTarget const* d = handle_cast<GLRenderTarget const*>(dst);
 
-        if (!ALLOW_REVERSE_MULTISAMPLE_RESOLVE) {
-            // With GLES 3.x, GL_INVALID_OPERATION is generated if the value of GL_SAMPLE_BUFFERS
-            // for the draw buffer is greater than zero. This works with OpenGL, so we want to
-            // make sure to catch this scenario.
-            assert(d->gl.samples <= 1);
-        }
+        // With GLES 3.x, GL_INVALID_OPERATION is generated if the value of GL_SAMPLE_BUFFERS
+        // for the draw buffer is greater than zero. This works with OpenGL, so we want to
+        // make sure to catch this scenario.
+        assert(d->gl.samples <= 1);
 
         // GL_INVALID_OPERATION is generated if GL_SAMPLE_BUFFERS for the read buffer is greater
         // than zero and the formats of draw and read buffers are not identical.

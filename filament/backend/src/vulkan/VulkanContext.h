@@ -24,9 +24,10 @@
 
 #include <bluevk/BlueVK.h>
 
-#include <utils/compiler.h>
-
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wundef"
 #include "vk_mem_alloc.h"
+#pragma clang diagnostic pop
 
 #include <utils/Condition.h>
 #include <utils/Mutex.h>
@@ -59,6 +60,7 @@ struct VulkanCmdFence {
     utils::Condition condition;
     utils::Mutex mutex;
     std::atomic<VkResult> status;
+    bool swapChainDestroyed = false;
 
     // TODO: for non-work buffers the following field indicates if the fence has EVER been
     // submitted, which is a bit misleading or un-useful. This needs to be refactored.
@@ -100,6 +102,7 @@ struct VulkanContext {
     uint32_t graphicsQueueFamilyIndex;
     VkQueue graphicsQueue;
     bool debugMarkersSupported;
+    bool debugUtilsSupported;
     VulkanBinder::RasterState rasterState;
     VulkanCommandBuffer* currentCommands;
     VulkanSurfaceContext* currentSurface;
@@ -154,7 +157,6 @@ struct VulkanSurfaceContext {
 void selectPhysicalDevice(VulkanContext& context);
 void createLogicalDevice(VulkanContext& context);
 void getPresentationQueue(VulkanContext& context, VulkanSurfaceContext& sc);
-void getSurfaceCaps(VulkanContext& context, VulkanSurfaceContext& sc);
 
 void createSwapChain(VulkanContext& context, VulkanSurfaceContext& sc);
 void destroySwapChain(VulkanContext& context, VulkanSurfaceContext& sc, VulkanDisposer& disposer);

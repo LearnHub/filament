@@ -22,6 +22,9 @@
 #pragma clang diagnostic ignored "-Wunused-variable"
 #pragma clang diagnostic ignored "-Wmissing-field-initializers"
 #pragma clang diagnostic ignored "-Wtautological-compare"
+#pragma clang diagnostic ignored "-Wnullability-completeness"
+#pragma clang diagnostic ignored "-Wweak-vtables"
+#pragma clang diagnostic ignored "-Wimplicit-fallthrough"
 #define VMA_IMPLEMENTATION
 #include <cstdio>
 #include "vk_mem_alloc.h"
@@ -90,7 +93,6 @@ void selectPhysicalDevice(VulkanContext& context) {
                 continue;
             }
             if (props.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-                assert(props.timestampValidBits > 0);
                 context.graphicsQueueFamilyIndex = j;
             }
         }
@@ -122,6 +124,21 @@ void selectPhysicalDevice(VulkanContext& context) {
         context.physicalDevice = physicalDevice;
         vkGetPhysicalDeviceFeatures(physicalDevice, &context.physicalDeviceFeatures);
         vkGetPhysicalDeviceMemoryProperties(physicalDevice, &context.memoryProperties);
+
+        // Print some driver or MoltenVK information if it is available.
+        if (vkGetPhysicalDeviceProperties2KHR) {
+            VkPhysicalDeviceDriverProperties driverProperties = {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES,
+            };
+            VkPhysicalDeviceProperties2 physicalDeviceProperties2 = {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+                .pNext = &driverProperties,
+            };
+            vkGetPhysicalDeviceProperties2KHR(physicalDevice, &physicalDeviceProperties2);
+            utils::slog.i << "Vulkan device driver: "
+                << driverProperties.driverName << " "
+                << driverProperties.driverInfo << utils::io::endl;
+        }
 
         // Print out some properties of the GPU for diagnostic purposes.
         //
@@ -162,7 +179,7 @@ void createLogicalDevice(VulkanContext& context) {
     std::vector<const char*> deviceExtensionNames = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     };
-    if (context.debugMarkersSupported) {
+    if (context.debugMarkersSupported && !context.debugUtilsSupported) {
         deviceExtensionNames.push_back(VK_EXT_DEBUG_MARKER_EXTENSION_NAME);
     }
     deviceQueueCreateInfo->sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -233,7 +250,9 @@ void createLogicalDevice(VulkanContext& context) {
     const VmaAllocatorCreateInfo allocatorInfo {
         .physicalDevice = context.physicalDevice,
         .device = context.device,
-        .pVulkanFunctions = &funcs
+        .pVulkanFunctions = &funcs,
+        .pRecordSettings = nullptr,
+        .instance = context.instance
     };
     vmaCreateAllocator(&allocatorInfo, &context.allocator);
 
@@ -299,7 +318,7 @@ void getPresentationQueue(VulkanContext& context, VulkanSurfaceContext& sc) {
     ASSERT_POSTCONDITION(sc.presentQueue, "Unable to obtain presentation queue.");
 }
 
-void getSurfaceCaps(VulkanContext& context, VulkanSurfaceContext& sc) {
+static VkSurfaceCapabilitiesKHR getSurfaceCaps(VulkanContext& context, VulkanSurfaceContext& sc) {
     VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context.physicalDevice,
             sc.surface, &sc.surfaceCapabilities);
     ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR error.");
@@ -314,18 +333,19 @@ void getSurfaceCaps(VulkanContext& context, VulkanSurfaceContext& sc) {
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(context.physicalDevice, sc.surface,
             &surfaceFormatsCount, sc.surfaceFormats.data());
     ASSERT_POSTCONDITION(result == VK_SUCCESS, "vkGetPhysicalDeviceSurfaceFormatsKHR error.");
+    return sc.surfaceCapabilities;
 }
 
 void createSwapChain(VulkanContext& context, VulkanSurfaceContext& surfaceContext) {
-    getSurfaceCaps(context, surfaceContext);
+    const auto caps = getSurfaceCaps(context, surfaceContext);
 
     // The general advice is to require one more than the minimum swap chain length, since the
     // absolute minimum could easily require waiting for a driver or presentation layer to release
     // the previous frame's buffer. The only situation in which we'd ask for the minimum length is
     // when using a MAILBOX presentation strategy for low-latency situations where tearing is
     // acceptable.
-    const uint32_t maxImageCount = surfaceContext.surfaceCapabilities.maxImageCount;
-    const uint32_t minImageCount = surfaceContext.surfaceCapabilities.minImageCount;
+    const uint32_t maxImageCount = caps.maxImageCount;
+    const uint32_t minImageCount = caps.minImageCount;
     uint32_t desiredImageCount = minImageCount + 1;
 
     // According to section 30.5 of VK 1.1, maxImageCount of zero means "that there is no limit on
@@ -342,12 +362,13 @@ void createSwapChain(VulkanContext& context, VulkanSurfaceContext& surfaceContex
             break;
         }
     }
-    const auto compositionCaps = surfaceContext.surfaceCapabilities.supportedCompositeAlpha;
+    const auto compositionCaps = caps.supportedCompositeAlpha;
     const auto compositeAlpha = (compositionCaps & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) ?
             VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR : VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 
     // Create the low-level swap chain.
-    const auto size = surfaceContext.surfaceCapabilities.currentExtent;
+    auto size = surfaceContext.clientSize = caps.currentExtent;
+
     VkSwapchainCreateInfoKHR createInfo {
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = surfaceContext.surface,
@@ -357,10 +378,21 @@ void createSwapChain(VulkanContext& context, VulkanSurfaceContext& surfaceContex
         .imageExtent = size,
         .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+
+        // TODO: Setting the preTransform to IDENTITY means we are letting the Android Compositor
+        // handle the rotation. In some situations it might be more efficient to handle this
+        // ourselves by setting this field to be equal to the currentTransform mask in the caps, but
+        // this would involve adjusting the MVP, derivatives in GLSL, and possibly more.
+        // https://android-developers.googleblog.com/2020/02/handling-device-orientation-efficiently.html
         .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
+
         .compositeAlpha = compositeAlpha,
         .presentMode = VK_PRESENT_MODE_FIFO_KHR,
-        .clipped = VK_TRUE
+        .clipped = VK_TRUE,
+
+        // TODO: Setting the oldSwapchain parameter would avoid exiting and re-entering
+        // exclusive mode, which could result in a smoother orientation change.
+        .oldSwapchain = VK_NULL_HANDLE
     };
     VkSwapchainKHR swapchain;
     VkResult result = vkCreateSwapchainKHR(context.device, &createInfo, VKALLOC, &swapchain);
@@ -393,6 +425,7 @@ void createSwapChain(VulkanContext& context, VulkanSurfaceContext& surfaceContex
             << ", " << surfaceContext.surfaceFormat.format
             << ", " << surfaceContext.surfaceFormat.colorSpace
             << ", " << imageCount
+            << ", " << caps.currentTransform
             << utils::io::endl;
 
     // Create image views.
@@ -436,7 +469,15 @@ void destroySwapChain(VulkanContext& context, VulkanSurfaceContext& surfaceConte
         disposer.release(swapContext.commands.resources);
         vkFreeCommandBuffers(context.device, context.commandPool, 1,
                 &swapContext.commands.cmdbuffer);
-        swapContext.commands.fence.reset();
+
+        // The wrapper object for the submission fence has shared ownership semantics, so here
+        // we notify other owners that the swap chain (and its associated command buffers) have
+        // been destroyed.
+        if (swapContext.commands.fence) {
+            swapContext.commands.fence->swapChainDestroyed = true;
+            swapContext.commands.fence.reset();
+        }
+
         vkDestroyImageView(context.device, swapContext.attachment.view, VKALLOC);
         swapContext.commands.fence = VK_NULL_HANDLE;
         swapContext.attachment.view = VK_NULL_HANDLE;
@@ -495,8 +536,10 @@ void waitForIdle(VulkanContext& context) {
     }
 
     // Flush the work command buffer and wait for it to finish.
-    flushWorkCommandBuffer(context);
-    acquireWorkCommandBuffer(context);
+    if (!context.work.fence->submitted) {
+        flushWorkCommandBuffer(context);
+        acquireWorkCommandBuffer(context);
+    }
 
     // Wait for submitted command buffer(s) to finish.
     if (context.currentSurface) {

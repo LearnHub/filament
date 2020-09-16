@@ -238,6 +238,7 @@ public:
     static constexpr RenderFlags HAS_DYNAMIC_LIGHTING    = 0x04;
     static constexpr RenderFlags HAS_INVERSE_FRONT_FACES = 0x08;
     static constexpr RenderFlags HAS_FOG                 = 0x10;
+    static constexpr RenderFlags HAS_VSM                 = 0x20;
 
 
     RenderPass(FEngine& engine, utils::GrowingSlice<Command> commands) noexcept;
@@ -314,7 +315,7 @@ private:
             RenderFlags renderFlags, FScene::VisibleMaskType visibilityMask,
             math::float3 cameraPosition, math::float3 cameraForward) noexcept;
 
-    static void setupColorCommand(Command& cmdDraw, bool hasDepthPass,
+    static void setupColorCommand(Command& cmdDraw,
             FMaterialInstance const* mi, bool inverseFrontFaces) noexcept;
 
     void recordDriverCommands(FEngine::DriverApi& driver, const Command* first,

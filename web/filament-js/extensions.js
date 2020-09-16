@@ -34,6 +34,25 @@ Filament.vectorToArray = function(vector) {
     return result;
 };
 
+Filament.shadowOptions = function(overrides) {
+    const options = {
+        mapSize: 1024,
+        shadowCascades: 1,
+        constantBias: 0.001,
+        normalBias: 1.0,
+        shadowFar: 0.0,
+        shadowNearHint: 1.0,
+        shadowFarHint: 100.0,
+        stable: false,
+        polygonOffsetConstant: 0.5,
+        polygonOffsetSlope: 2.0,
+        screenSpaceContactShadows: false,
+        stepCount: 8,
+        maxShadowDistance: 0.3
+    };
+    return Object.assign(options, overrides);
+};
+
 Filament.loadClassExtensions = function() {
 
     /// Engine ::core class::
@@ -88,6 +107,7 @@ Filament.loadClassExtensions = function() {
     };
 
     /// createIblFromKtx ::method:: Utility that creates an [IndirectLight] from a KTX file.
+    /// NOTE: To prevent a leak, please be sure to destroy the associated reflections texture.
     /// buffer ::argument:: asset string, or Uint8Array, or [Buffer] with KTX file contents
     /// options ::argument:: Options dictionary.
     /// ::retval:: [IndirectLight]
@@ -99,6 +119,7 @@ Filament.loadClassExtensions = function() {
     };
 
     /// createSkyFromKtx ::method:: Utility function that creates a [Skybox] from a KTX file.
+    /// NOTE: To prevent a leak, please be sure to destroy the associated texture.
     /// buffer ::argument:: asset string, or Uint8Array, or [Buffer] with KTX file contents
     /// options ::argument:: Options dictionary.
     /// ::retval:: [Skybox]
@@ -175,6 +196,16 @@ Filament.loadClassExtensions = function() {
         this._removeEntities(vector);
     };
 
+    /// setShadowOptions ::method::
+    /// instance ::argument:: Instance of a light component obtained from `getInstance`.
+    /// overrides ::argument:: Dictionary with one or more of the following properties: \
+    /// mapSize, shadowCascades, constantBias, normalBias, shadowFar, shadowNearHint, \
+    /// shadowFarHint, stable, polygonOffsetConstant, polygonOffsetSlope, \
+    // screenSpaceContactShadows, stepCount, maxShadowDistance.
+    Filament.LightManager.prototype.setShadowOptions = function(instance, overrides) {
+        this._setShadowOptions(instance, Filament.shadowOptions(overrides));
+    };
+
     /// setClearOptions ::method::
     /// overrides ::argument:: Dictionary with one or more of the following properties: \
     /// clearColor, clear, discard.
@@ -206,11 +237,11 @@ Filament.loadClassExtensions = function() {
 
     /// setDepthOfFieldOptions ::method::
     /// overrides ::argument:: Dictionary with one or more of the following properties: \
-    /// focusDistance, blurScale, maxApertureDiameter, enabled.
+    /// focusDistance, cocScale, maxApertureDiameter, enabled.
     Filament.View.prototype.setDepthOfFieldOptions = function(overrides) {
         const options = {
             focusDistance: 10.0,
-            blurScale: 1.0,
+            cocScale: 1.0,
             maxApertureDiameter: 0.01,
             enabled: false
         };
@@ -297,6 +328,10 @@ Filament.loadClassExtensions = function() {
         buffer = getBufferDescriptor(buffer);
         this._setBuffer(engine, buffer, byteOffset);
         buffer.delete();
+    };
+
+    Filament.LightManager$Builder.prototype.shadowOptions = function(overrides) {
+        return this._shadowOptions(Filament.shadowOptions(overrides));
     };
 
     Filament.RenderableManager$Builder.prototype.build =
