@@ -196,6 +196,8 @@ void FRenderer::renderJob(ArenaScope& arena, FView& view) {
     filament::Viewport const& vp = view.getViewport();
     const bool hasPostProcess = view.hasPostProcessPass();
     bool colorGrading = hasPostProcess;
+//TEMPORARILY DISABLED BECAUSE OF UNEXPLAINED BRIGHTENING OF SCENES (EVEN WITH LINEAR TONE MAPPING)
+colorGrading = false;
     bool dithering = view.getDithering() == View::Dithering::TEMPORAL;
     bool fxaa = view.getAntiAliasing() == View::AntiAliasing::FXAA;
     uint8_t msaa = view.getSampleCount();
