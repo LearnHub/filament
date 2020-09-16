@@ -153,7 +153,7 @@ import androidx.annotation.Size;
      */
     public void setTransform(@EntityInstance int i,
             @NonNull @Size(min = 16) float[] localTransform) {
-        Asserts.assertMat4fIn(localTransform);
+        //Asserts.assertMat4fIn(localTransform);
         nSetTransform(mNativeObject, i, localTransform);
     }
 
