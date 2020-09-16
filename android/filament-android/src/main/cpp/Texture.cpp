@@ -87,9 +87,16 @@ Java_com_google_android_filament_Texture_nBuilderDepth(JNIEnv*, jclass,
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_google_android_filament_Texture_nBuilderLevels(JNIEnv*, jclass,
-        jlong nativeBuilder, jint levels) {
+                                                        jlong nativeBuilder, jint levels) {
     Texture::Builder *builder = (Texture::Builder *) nativeBuilder;
     builder->levels((uint8_t) levels);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_Texture_nBuilderImport(JNIEnv*, jclass,
+                                                        jlong nativeBuilder, jint id) {
+    Texture::Builder *builder = (Texture::Builder *) nativeBuilder;
+    builder->import((intptr_t) id);
 }
 
 extern "C" JNIEXPORT void JNICALL
