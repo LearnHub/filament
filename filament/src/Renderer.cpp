@@ -264,7 +264,7 @@ colorGrading = false;
      * Shadow pass
      */
 
-    if (view.hasShadowing()) {
+    if (view.needsShadowMap()) {
         view.renderShadowMaps(fg, engine, driver, pass);
     }
 

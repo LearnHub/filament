@@ -63,10 +63,6 @@ class JobSystem;
 
 namespace filament {
 
-namespace fg {
-class ResourceAllocator;
-} // namespace fg;
-
 class FEngine;
 class FMaterialInstance;
 class FRenderer;
@@ -175,6 +171,7 @@ public:
     bool hasDirectionalLight() const noexcept { return mHasDirectionalLight; }
     bool hasDynamicLighting() const noexcept { return mHasDynamicLighting; }
     bool hasShadowing() const noexcept { return mHasShadowing; }
+    bool needsShadowMap() const noexcept { return mNeedsShadowMap; }
     bool hasFog() const noexcept { return mFogOptions.enabled && mFogOptions.density > 0.0f; }
     bool hasVsm() const noexcept { return mShadowType == ShadowType::VSM; }
 
@@ -291,6 +288,7 @@ public:
         options.resolution = std::floor(
                 math::clamp(1.0f, 2.0f, options.resolution * 2.0f) + 0.5f) * 0.5f;
         options.intensity = std::max(0.0f, options.intensity);
+        options.minHorizonAngleRad = math::clamp(0.0f, math::f::PI_2, options.minHorizonAngleRad);
         mAmbientOcclusionOptions = options;
     }
 
@@ -493,6 +491,7 @@ private:
     mutable bool mHasDirectionalLight = false;
     mutable bool mHasDynamicLighting = false;
     mutable bool mHasShadowing = false;
+    mutable bool mNeedsShadowMap = false;
 
     ShadowMapManager mShadowMapManager;
 };
