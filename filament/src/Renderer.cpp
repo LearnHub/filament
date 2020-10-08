@@ -376,8 +376,7 @@ colorGrading = false;
     // --------------------------------------------------------------------------------------------
     // SSAO pass
 
-    const bool useSSAO = aoOptions.enabled;
-    if (useSSAO) {
+    if (aoOptions.enabled) {
         // we could rely on FrameGraph culling, but this creates unnecessary CPU work
         ppm.screenSpaceAmbientOcclusion(fg, pass, svp, cameraInfo, aoOptions);
     }
@@ -427,15 +426,16 @@ colorGrading = false;
     colorGradingConfigForColor.asSubpass = colorGradingConfigForColor.asSubpass && !taaOptions.enabled;
 
     // the color pass itself + color-grading as subpass if needed
-    colorPass(fg, "Color Pass", desc, config, colorGradingConfigForColor, pass, view);
+    FrameGraphId<FrameGraphTexture> colorPassOutput = colorPass(fg, "Color Pass",
+            desc, config, colorGradingConfigForColor, pass, view);
 
     // the color pass + refraction + color-grading as subpass if needed
     // this cancels the colorPass() call above if refraction is active.
-    //      TODO: look for refraction draw calls only if screen-space refraction is enabled
-    FrameGraphId<FrameGraphTexture> colorPassOutput =
-            refractionPass(fg, config, colorGradingConfigForColor, pass, view);
-    FrameGraphId<FrameGraphTexture> input = colorPassOutput;
+    if (view.isScreenSpaceRefractionEnabled()) {
+        colorPassOutput = refractionPass(fg, config, colorGradingConfigForColor, pass, view);
+    }
 
+    FrameGraphId<FrameGraphTexture> input = colorPassOutput;
     fg.addTrivialSideEffectPass("Finish Color Passes", [&view](DriverApi& driver) {
         // Unbind SSAO sampler, b/c the FrameGraph will delete the texture at the end of the pass.
         view.cleanupRenderPasses();

@@ -3,9 +3,28 @@
 This file contains one line summaries of commits that are worthy of mentioning in release notes.
 A new header is inserted each time a *tag* is created.
 
-## Next release
+## Next release (v1.9.4)
+
+## v1.9.3
+
+- engine: Added new APIs to enable/disable screen space refraction
+- engine: Fix, flip the shading normal when det < 0.
+- gltfio: Fix animation by clamping the per-channel interpolant.
+- gltfio: add async cancellation API
+- gltfio: Fix "uniform not found" errors.
+- gltfio: Disable clear coat layer IOR change in glTF files (#3104)
+- Vulkan: fix final image barrier used for swap chain.
+- matdbg: Various improvements
+- JavaScript bindings: fix TextureUsage bitmask.
+- cmgen / mipgen: add opt-in for ASTC / ETC support.
 
 ## v1.9.2
+
+- Fixes / improvements for contact shadows, fog, and DOF
+- Reduce SSAO creases caused by geometry tessellation
+- Fix compilation warnings and issue with Clang 12
+- Fix JNI crashes
+- Rename .blurScale to .cocScale in DOF options
 
 ## v1.9.1
 
