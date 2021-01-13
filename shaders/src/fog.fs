@@ -27,6 +27,8 @@ vec4 fog(vec4 color, vec3 view) {
         float fogDensity2 = frameUniforms.fogDensity;
         // Skip sqrt
         float fogDepth2 = view.x * view.x + view.y * view.y + view.z * view.z;
+        // exp2 was used in the original filament fog implementation and may be more performant than exp
+        // the difference was not obvious in limited testing
         float fogFactor = exp2(-fogDensity2 * fogDepth2);
         color.rgb = mix(fogColor, color.rgb, fogFactor);
     }
