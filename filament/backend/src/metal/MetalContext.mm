@@ -18,98 +18,81 @@
 
 #include "MetalHandles.h"
 
-#include <utils/Panic.h>
+#include <utils/debug.h>
+#include <utils/FixedCapacityVector.h>
+
+#include <utility>
 
 namespace filament {
 namespace backend {
 namespace metal {
 
-void presentDrawable(bool presentFrame, void* user) {
-    // CFBridgingRelease here is used to balance the CFBridgingRetain inside of acquireDrawable.
-    id<CAMetalDrawable> drawable = (id<CAMetalDrawable>) CFBridgingRelease(user);
-    if (presentFrame) {
-        [drawable present];
-    }
-    // The drawable will be released here when the "drawable" variable goes out of scope.
-}
+void initializeSupportedGpuFamilies(MetalContext* context) {
+    auto& highestSupportedFamily = context->highestSupportedGpuFamily;
 
-id<MTLTexture> acquireDrawable(MetalContext* context) {
-    if (context->currentDrawable) {
-        return context->currentDrawable.texture;
-    }
-    if (context->currentSurface->isHeadless()) {
-        if (context->headlessDrawable) {
-            return context->headlessDrawable;
+    assert_invariant(context->device);
+    id<MTLDevice> device = context->device;
+
+    highestSupportedFamily.common = 0u;
+    highestSupportedFamily.apple = 0u;
+    highestSupportedFamily.mac = 0u;
+
+    if (@available(iOS 13.0, *)) {
+        if ([device supportsFamily:MTLGPUFamilyApple7]) {
+            highestSupportedFamily.apple = 7;
+        } else if ([device supportsFamily:MTLGPUFamilyApple6]) {
+            highestSupportedFamily.apple = 6;
+        } else if ([device supportsFamily:MTLGPUFamilyApple5]) {
+            highestSupportedFamily.apple = 5;
+        } else if ([device supportsFamily:MTLGPUFamilyApple4]) {
+            highestSupportedFamily.apple = 4;
+        } else if ([device supportsFamily:MTLGPUFamilyApple3]) {
+            highestSupportedFamily.apple = 3;
+        } else if ([device supportsFamily:MTLGPUFamilyApple2]) {
+            highestSupportedFamily.apple = 2;
+        } else if ([device supportsFamily:MTLGPUFamilyApple1]) {
+            highestSupportedFamily.apple = 1;
         }
-        // For headless surfaces we construct a "fake" drawable, which is simply a renderable
-        // texture.
-        MTLTextureDescriptor* textureDescriptor = [MTLTextureDescriptor new];
-        textureDescriptor.pixelFormat = MTLPixelFormatBGRA8Unorm;
-        textureDescriptor.width = context->currentSurface->getSurfaceWidth();
-        textureDescriptor.height = context->currentSurface->getSurfaceHeight();
-        // Specify MTLTextureUsageShaderRead so the headless surface can be blitted from.
-        textureDescriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-#if defined(IOS)
-        textureDescriptor.storageMode = MTLStorageModeShared;
-#else
-        textureDescriptor.storageMode = MTLStorageModeManaged;
-#endif
-        context->headlessDrawable = [context->device newTextureWithDescriptor:textureDescriptor];
-        return context->headlessDrawable;
-    }
 
-    context->currentDrawable = [context->currentSurface->getLayer() nextDrawable];
-
-    if (context->frameFinishedCallback) {
-        id<CAMetalDrawable> drawable = context->currentDrawable;
-        backend::FrameFinishedCallback callback = context->frameFinishedCallback;
-        void* userData = context->frameFinishedUserData;
-        // This block strongly captures drawable to keep it alive until the handler executes.
-        [getPendingCommandBuffer(context) addScheduledHandler:^(id<MTLCommandBuffer> cb) {
-            // CFBridgingRetain is used here to give the drawable a +1 retain count before
-            // casting it to a void*.
-            PresentCallable callable(presentDrawable, (void*) CFBridgingRetain(drawable));
-            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                callback(callable, userData);
-            });
-        }];
-    }
-    ASSERT_POSTCONDITION(context->currentDrawable != nil, "Could not obtain drawable.");
-    return context->currentDrawable.texture;
-}
-
-id<MTLTexture> acquireDepthTexture(MetalContext* context) {
-    if (context->currentDepthTexture) {
-        // If the surface size has changed, we'll need to allocate a new depth texture.
-        if (context->currentDepthTexture.width != context->currentSurface->getSurfaceWidth() ||
-            context->currentDepthTexture.height != context->currentSurface->getSurfaceHeight()) {
-            context->currentDepthTexture = nil;
-        } else {
-            return context->currentDepthTexture;
+        if ([device supportsFamily:MTLGPUFamilyCommon3]) {
+            highestSupportedFamily.common = 3;
+        } else if ([device supportsFamily:MTLGPUFamilyCommon2]) {
+            highestSupportedFamily.common = 2;
+        } else if ([device supportsFamily:MTLGPUFamilyCommon1]) {
+            highestSupportedFamily.common = 1;
         }
-    }
 
-    const MTLPixelFormat depthFormat =
-#if defined(IOS)
-            MTLPixelFormatDepth32Float;
-#else
-    context->device.depth24Stencil8PixelFormatSupported ?
-            MTLPixelFormatDepth24Unorm_Stencil8 : MTLPixelFormatDepth32Float;
+        if ([device supportsFamily:MTLGPUFamilyMac2]) {
+            highestSupportedFamily.mac = 2;
+        } else if ([device supportsFamily:MTLGPUFamilyMac1]) {
+            highestSupportedFamily.mac = 1;
+        }
+    } else {
+#if TARGET_OS_IOS
+        using FeatureSet = std::pair<MTLFeatureSet, uint8_t>;
+        auto testFeatureSets = [device] (const auto& featureSets,
+                uint8_t& outHighestSupported) {
+            for (const auto& set : featureSets) {
+                if ([device supportsFeatureSet:set.first]) {
+                    outHighestSupported = set.second;
+                    break;
+                }
+            }
+        };
+
+        // Apple GPUs
+        auto appleFeatureSets = utils::FixedCapacityVector<FeatureSet>::with_capacity(5);
+        if (@available(iOS 12.0, *)) {
+            appleFeatureSets.emplace_back(MTLFeatureSet_iOS_GPUFamily5_v1, 5u);
+        }
+        appleFeatureSets.emplace_back(MTLFeatureSet_iOS_GPUFamily4_v1, 4u);
+        appleFeatureSets.emplace_back(MTLFeatureSet_iOS_GPUFamily3_v2, 3u);
+        appleFeatureSets.emplace_back(MTLFeatureSet_iOS_GPUFamily2_v4, 2u);
+        appleFeatureSets.emplace_back(MTLFeatureSet_iOS_GPUFamily1_v4, 1u);
+
+        testFeatureSets(appleFeatureSets, highestSupportedFamily.apple);
 #endif
-
-    const NSUInteger width = context->currentSurface->getSurfaceWidth();
-    const NSUInteger height = context->currentSurface->getSurfaceHeight();
-    MTLTextureDescriptor* descriptor =
-            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:depthFormat
-                                                               width:width
-                                                              height:height
-                                                           mipmapped:NO];
-    descriptor.usage = MTLTextureUsageRenderTarget;
-    descriptor.resourceOptions = MTLResourceStorageModePrivate;
-
-    context->currentDepthTexture = [context->device newTextureWithDescriptor:descriptor];
-
-    return context->currentDepthTexture;
+    }
 }
 
 id<MTLCommandBuffer> getPendingCommandBuffer(MetalContext* context) {
@@ -130,7 +113,7 @@ void submitPendingCommands(MetalContext* context) {
     if (!context->pendingCommandBuffer) {
         return;
     }
-    assert(context->pendingCommandBuffer.status != MTLCommandBufferStatusCommitted);
+    assert_invariant(context->pendingCommandBuffer.status != MTLCommandBufferStatusCommitted);
     [context->pendingCommandBuffer commit];
     context->pendingCommandBuffer = nil;
 }

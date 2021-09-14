@@ -73,11 +73,7 @@ import static com.google.android.filament.Texture.Type.COMPRESSED;
 public class Texture {
     private long mNativeObject;
 
-    Texture(long nativeTexture) {
-        mNativeObject = nativeTexture;
-    }
-
-    public Texture(Engine engine, long nativeTexture) {
+    public Texture(long nativeTexture) {
         mNativeObject = nativeTexture;
     }
 
@@ -509,12 +505,15 @@ public class Texture {
                 case RGBA_INTEGER:
                     n = 4;
                     break;
+
+                default: throw new IllegalStateException("unsupported format enum");
             }
 
             int bpp = n;
             switch (type) {
                 case UBYTE:
                 case BYTE:
+                case COMPRESSED:
                     // nothing to do
                     break;
                 case USHORT:
@@ -530,6 +529,9 @@ public class Texture {
                 case UINT_10F_11F_11F_REV:
                     // Special case, format must be RGB and uses 4 bytes
                     bpp = 4;
+                    break;
+                case USHORT_565:
+                    bpp = 2;
                     break;
             }
 
@@ -560,6 +562,17 @@ public class Texture {
     public static boolean isTextureFormatSupported(@NonNull Engine engine,
             @NonNull InternalFormat format) {
         return nIsTextureFormatSupported(engine.getNativeObject(), format.ordinal());
+    }
+
+    /**
+     * Checks whether texture swizzling is supported in this {@link Engine}.
+     * This depends on the selected backend.
+     *
+     * @param engine {@link Engine}
+     * @return <code>true</code> if texture swizzling.
+     */
+    public static boolean isTextureSwizzleSupported(@NonNull Engine engine) {
+        return nIsTextureSwizzleSupported(engine.getNativeObject());
     }
 
     /**
@@ -686,6 +699,26 @@ public class Texture {
         @NonNull
         public Builder swizzle(@NonNull Swizzle r, @NonNull Swizzle g, @NonNull Swizzle b, @NonNull Swizzle a) {
             nBuilderSwizzle(mNativeBuilder, r.ordinal(), g.ordinal(), b.ordinal(), a.ordinal());
+            return this;
+        }
+
+        /**
+         * Specify a native texture to import as a Filament texture.
+         * <p>
+         * The texture id is backend-specific:
+         * <ul>
+         *   <li> OpenGL: GLuint texture ID </li>
+         * </ul>
+         * </p>
+         *
+         *
+         * @param id a backend specific texture identifier
+         *
+         * @return This Builder, for chaining calls.
+         */
+        @NonNull
+        public Builder importTexture(long id) {
+            nBuilderImportTexture(mNativeBuilder, id);
             return this;
         }
 
@@ -893,7 +926,7 @@ public class Texture {
      * @param level     Level to set the image for. Must be less than {@link #getLevels()}.
      * @param xoffset   x-offset in texel of the region to modify
      * @param yoffset   y-offset in texel of the region to modify
-     * @param yoffset   z-offset in texel of the region to modify
+     * @param zoffset   z-offset in texel of the region to modify
      * @param width     width in texel of the region to modify
      * @param height    height in texel of the region to modify
      * @param depth     depth in texel or index of the region to modify
@@ -1148,6 +1181,7 @@ public class Texture {
     }
 
     private static native boolean nIsTextureFormatSupported(long nativeEngine, int internalFormat);
+    private static native boolean nIsTextureSwizzleSupported(long nativeEngine);
 
     private static native long nCreateBuilder();
     private static native void nDestroyBuilder(long nativeBuilder);
@@ -1161,6 +1195,7 @@ public class Texture {
     private static native void nBuilderFormat(long nativeBuilder, int format);
     private static native void nBuilderUsage(long nativeBuilder, int flags);
     private static native void nBuilderSwizzle(long nativeBuilder, int r, int g, int b, int a);
+    private static native void nBuilderImportTexture(long nativeBuilder, long id);
     private static native long nBuilderBuild(long nativeBuilder, long nativeEngine);
 
     private static native int nGetWidth(long nativeTexture, int level);
@@ -1172,35 +1207,35 @@ public class Texture {
 
     private static native int nSetImage(long nativeTexture, long nativeEngine,
             int level, int xoffset, int yoffset, int width, int height,
-            Buffer storage, int remaining, int left, int bottom, int type, int alignment,
+            Buffer storage, int remaining, int left, int top, int type, int alignment,
             int stride, int format,
             Object handler, Runnable callback);
 
     private static native int nSetImageCompressed(long nativeTexture, long nativeEngine,
             int level, int xoffset, int yoffset, int width, int height,
-            Buffer storage, int remaining, int left, int bottom, int type, int alignment,
+            Buffer storage, int remaining, int left, int top, int type, int alignment,
             int compressedSizeInBytes, int compressedFormat,
             Object handler, Runnable callback);
 
     private static native int nSetImage3D(long nativeTexture, long nativeEngine,
             int level, int xoffset, int yoffset, int zoffset, int width, int height, int depth,
-            Buffer storage, int remaining, int left, int bottom, int type, int alignment,
+            Buffer storage, int remaining, int left, int top, int type, int alignment,
             int stride, int format,
             Object handler, Runnable callback);
 
     private static native int nSetImage3DCompressed(long nativeTexture, long nativeEngine,
             int level, int xoffset, int yoffset, int zoffset, int width, int height, int depth,
-            Buffer storage, int remaining, int left, int bottom, int type, int alignment,
+            Buffer storage, int remaining, int left, int top, int type, int alignment,
             int compressedSizeInBytes, int compressedFormat,
             Object handler, Runnable callback);
 
     private static native int nSetImageCubemap(long nativeTexture, long nativeEngine,
-            int level, Buffer storage, int remaining, int left, int bottom, int type,
+            int level, Buffer storage, int remaining, int left, int top, int type,
             int alignment, int stride, int format,
             int[] faceOffsetsInBytes, Object handler, Runnable callback);
 
     private static native int nSetImageCubemapCompressed(long nativeTexture, long nativeEngine,
-            int level, Buffer storage, int remaining, int left, int bottom, int type,
+            int level, Buffer storage, int remaining, int left, int top, int type,
             int alignment, int compressedSizeInBytes, int compressedFormat,
             int[] faceOffsetsInBytes, Object handler, Runnable callback);
 

@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef UTILS_LINUX_CONDITION_H
-#define UTILS_LINUX_CONDITION_H
+#ifndef TNT_UTILS_LINUX_CONDITION_H
+#define TNT_UTILS_LINUX_CONDITION_H
 
 #include <atomic>
 #include <chrono>
@@ -68,7 +68,7 @@ public:
     std::cv_status wait_until(std::unique_lock<Mutex>& lock,
             const std::chrono::time_point<std::chrono::steady_clock, D>& timeout_time) noexcept {
         // convert to nanoseconds
-        int64_t ns = std::chrono::duration<int64_t, std::nano>(timeout_time.time_since_epoch()).count();
+        uint64_t ns = std::chrono::duration<uint64_t, std::nano>(timeout_time.time_since_epoch()).count();
         using sec_t = decltype(timespec::tv_sec);
         using nsec_t = decltype(timespec::tv_nsec);
         timespec ts{ sec_t(ns / 1000000000), nsec_t(ns % 1000000000) };
@@ -79,7 +79,7 @@ public:
     std::cv_status wait_until(std::unique_lock<Mutex>& lock,
             const std::chrono::time_point<std::chrono::system_clock, D>& timeout_time) noexcept {
         // convert to nanoseconds
-        int64_t ns = std::chrono::duration<int64_t, std::nano>(timeout_time.time_since_epoch()).count();
+        uint64_t ns = std::chrono::duration<uint64_t, std::nano>(timeout_time.time_since_epoch()).count();
         using sec_t = decltype(timespec::tv_sec);
         using nsec_t = decltype(timespec::tv_nsec);
         timespec ts{ sec_t(ns / 1000000000), nsec_t(ns % 1000000000) };
@@ -120,4 +120,4 @@ private:
 
 } // namespace utils
 
-#endif // UTILS_LINUX_CONDITION_H
+#endif // TNT_UTILS_LINUX_CONDITION_H

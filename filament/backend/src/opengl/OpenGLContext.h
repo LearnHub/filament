@@ -20,6 +20,9 @@
 #include <math/vec4.h>
 
 #include <utils/CString.h>
+#include <utils/debug.h>
+
+#include <backend/Handle.h>
 
 #include "GLUtils.h"
 
@@ -34,11 +37,23 @@ public:
     typedef math::details::TVec4<GLint> vec4gli;
     typedef math::details::TVec2<GLclampf> vec2glf;
 
+    // TODO: the footprint of this structure can be reduced. We need only 1 bit for index type, 16
+    // bits for vertexAttribArray. We can also use fewer bits for vertexBufferVersion, although
+    // this will require a corollary update in OpenGLDriver::setVertexBufferObject().
     struct RenderPrimitive {
         GLuint vao = 0;
         GLenum indicesType = GL_UNSIGNED_INT;
         GLuint elementArray = 0;
         utils::bitset32 vertexAttribArray;
+
+        // The optional 32-bit handle to a GLVertexBuffer is necessary only if the referenced
+        // VertexBuffer supports buffer objects. If this is zero, then the VBO handles array is
+        // immutable.
+        backend::Handle<backend::HwVertexBuffer> vertexBufferWithObjects = {};
+
+        // If this version number does not match vertexBufferWithObjects->bufferObjectsVersion,
+        // then the VAO needs to be updated.
+        uint8_t vertexBufferVersion = 0;
     } gl;
 
     OpenGLContext() noexcept;
@@ -99,11 +114,13 @@ public:
 
     // glGet*() values
     struct {
-        GLint max_renderbuffer_size = 0;
-        GLint max_uniform_block_size = 0;
-        GLint uniform_buffer_offset_alignment = 256;
-        GLfloat maxAnisotropy = 0.0f;
-    } gets;
+        GLfloat max_anisotropy;
+        GLint max_draw_buffers;
+        GLint max_renderbuffer_size;
+        GLint max_samples;
+        GLint max_uniform_block_size;
+        GLint uniform_buffer_offset_alignment;
+    } gets = {};
 
     // features supported by this version of GL or GLES
     struct {
@@ -112,23 +129,28 @@ public:
 
     // supported extensions detected at runtime
     struct {
-        bool texture_compression_s3tc = false;
-        bool texture_compression_etc2 = false;
-        bool texture_filter_anisotropic = false;
-        bool QCOM_tiled_rendering = false;
-        bool OES_EGL_image_external_essl3 = false;
-        bool EXT_debug_marker = false;
-        bool EXT_color_buffer_half_float = false;
-        bool EXT_color_buffer_float = false;
         bool APPLE_color_buffer_packed_float = false;
+        bool ARB_shading_language_packing = false;
+        bool EXT_clip_control = false;
+        bool EXT_color_buffer_float = false;
+        bool EXT_color_buffer_half_float = false;
+        bool EXT_debug_marker = false;
+        bool EXT_disjoint_timer_query = false;
         bool EXT_multisampled_render_to_texture = false;
         bool EXT_multisampled_render_to_texture2 = false;
-        bool KHR_debug = false;
-        bool EXT_texture_sRGB = false;
-        bool EXT_texture_compression_s3tc_srgb = false;
-        bool EXT_disjoint_timer_query = false;
         bool EXT_shader_framebuffer_fetch = false;
-        bool EXT_clip_control = false;
+        bool EXT_texture_compression_etc2 = false;
+        bool EXT_texture_compression_s3tc = false;
+        bool EXT_texture_compression_s3tc_srgb = false;
+        bool EXT_texture_filter_anisotropic = false;
+        bool EXT_texture_sRGB = false;
+        bool GOOGLE_cpp_style_line_directive = false;
+        bool KHR_debug = false;
+        bool OES_EGL_image_external_essl3 = false;
+        bool QCOM_tiled_rendering = false;
+        bool WEBGL_compressed_texture_etc = false;
+        bool WEBGL_compressed_texture_s3tc = false;
+        bool WEBGL_compressed_texture_s3tc_srgb = false;
     } ext;
 
     struct {
@@ -153,10 +175,23 @@ public:
 
         // Some drivers declare GL_EXT_texture_filter_anisotropic but don't support
         // calling glSamplerParameter() with GL_TEXTURE_MAX_ANISOTROPY_EXT
-        bool disable_texture_filter_anisotropic = false;
+        bool texture_filter_anisotropic_broken_on_sampler = false;
+
+        // Some drivers have issues when reading from a mip while writing to a different mip.
+        // In the OpenGL ES 3.0 specification this is covered in section 4.4.3,
+        // "Feedback Loops Between Textures and the Framebuffer".
+        bool disable_feedback_loops = false;
 
         // Some drivers don't implement timer queries correctly
         bool dont_use_timer_query = false;
+
+        // Some drivers can't blit from a sidecar renderbuffer into a layer of a texture array.
+        // This technique is used for VSM with MSAA turned on.
+        bool disable_sidecar_blit_into_texture_array = false;
+
+        // Some drivers incorrectly flatten the early exit condition in the EASU code, in which
+        // case we need an alternative algorithm
+        bool split_easu = false;
     } bugs;
 
     // state getters -- as needed.
@@ -310,7 +345,7 @@ constexpr size_t OpenGLContext::getIndexForCap(GLenum cap) noexcept { //NOLINT
 #endif
         default: index = 13; break; // should never happen
     }
-    assert(index < 13 && index < state.enables.caps.size());
+    assert_invariant(index < 13 && index < state.enables.caps.size());
     return index;
 }
 
@@ -329,21 +364,21 @@ constexpr size_t OpenGLContext::getIndexForBufferTarget(GLenum target) noexcept 
         case GL_PIXEL_UNPACK_BUFFER:        index = 7; break;
         default: index = 8; break; // should never happen
     }
-    assert(index < sizeof(state.buffers.genericBinding)/sizeof(state.buffers.genericBinding[0])); // NOLINT(misc-redundant-expression)
+    assert_invariant(index < sizeof(state.buffers.genericBinding)/sizeof(state.buffers.genericBinding[0])); // NOLINT(misc-redundant-expression)
     return index;
 }
 
 // ------------------------------------------------------------------------------------------------
 
 void OpenGLContext::activeTexture(GLuint unit) noexcept {
-    assert(unit < MAX_TEXTURE_UNIT_COUNT);
+    assert_invariant(unit < MAX_TEXTURE_UNIT_COUNT);
     update_state(state.textures.active, unit, [&]() {
         glActiveTexture(GL_TEXTURE0 + unit);
     });
 }
 
 void OpenGLContext::bindSampler(GLuint unit, GLuint sampler) noexcept {
-    assert(unit < MAX_TEXTURE_UNIT_COUNT);
+    assert_invariant(unit < MAX_TEXTURE_UNIT_COUNT);
     update_state(state.textures.units[unit].sampler, sampler, [&]() {
         glBindSampler(unit, sampler);
     });
@@ -388,7 +423,7 @@ void OpenGLContext::bindVertexArray(RenderPrimitive const* p) noexcept {
 void OpenGLContext::bindBufferRange(GLenum target, GLuint index, GLuint buffer,
         GLintptr offset, GLsizeiptr size) noexcept {
     size_t targetIndex = getIndexForBufferTarget(target);
-    assert(targetIndex <= 1); // validity check
+    assert_invariant(targetIndex <= 1); // validity check
 
     // this ALSO sets the generic binding
     if (   state.buffers.targets[targetIndex].buffers[index].name != buffer
@@ -428,8 +463,8 @@ void OpenGLContext::bindFramebuffer(GLenum target, GLuint buffer) noexcept {
 }
 
 void OpenGLContext::bindTexture(GLuint unit, GLuint target, GLuint texId, size_t targetIndex) noexcept {
-    assert(targetIndex == getIndexForTextureTarget(target));
-    assert(targetIndex < TEXTURE_TARGET_COUNT);
+    assert_invariant(targetIndex == getIndexForTextureTarget(target));
+    assert_invariant(targetIndex < TEXTURE_TARGET_COUNT);
     update_state(state.textures.units[unit].targets[targetIndex].texture_id, texId, [&]() {
         activeTexture(unit);
         glBindTexture(target, texId);
@@ -447,8 +482,8 @@ void OpenGLContext::useProgram(GLuint program) noexcept {
 }
 
 void OpenGLContext::enableVertexAttribArray(GLuint index) noexcept {
-    assert(state.vao.p);
-    assert(index < state.vao.p->vertexAttribArray.size());
+    assert_invariant(state.vao.p);
+    assert_invariant(index < state.vao.p->vertexAttribArray.size());
     if (UTILS_UNLIKELY(!state.vao.p->vertexAttribArray[index])) {
         state.vao.p->vertexAttribArray.set(index);
         glEnableVertexAttribArray(index);
@@ -456,8 +491,8 @@ void OpenGLContext::enableVertexAttribArray(GLuint index) noexcept {
 }
 
 void OpenGLContext::disableVertexAttribArray(GLuint index) noexcept {
-    assert(state.vao.p);
-    assert(index < state.vao.p->vertexAttribArray.size());
+    assert_invariant(state.vao.p);
+    assert_invariant(index < state.vao.p->vertexAttribArray.size());
     if (UTILS_UNLIKELY(state.vao.p->vertexAttribArray[index])) {
         state.vao.p->vertexAttribArray.unset(index);
         glDisableVertexAttribArray(index);

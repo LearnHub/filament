@@ -70,6 +70,23 @@ Java_com_google_android_filament_TransformManager_nCreateArray(JNIEnv* env,
     return tm->getInstance(entity);
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_google_android_filament_TransformManager_nCreateArrayFp64(JNIEnv* env,
+        jclass, jlong nativeTransformManager, jint entity_, jint parent,
+        jdoubleArray localTransform_) {
+    TransformManager* tm = (TransformManager*) nativeTransformManager;
+    Entity& entity = *reinterpret_cast<Entity*>(&entity_);
+    if (localTransform_) {
+        jdouble *localTransform = env->GetDoubleArrayElements(localTransform_, NULL);
+        tm->create(entity, (TransformManager::Instance) parent,
+                *reinterpret_cast<const filament::math::mat4 *>(localTransform));
+        env->ReleaseDoubleArrayElements(localTransform_, localTransform, JNI_ABORT);
+    } else {
+        tm->create(entity, (TransformManager::Instance) parent);
+    }
+    return tm->getInstance(entity);
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_google_android_filament_TransformManager_nDestroy(JNIEnv*, jclass,
         jlong nativeTransformManager, jint entity_) {
@@ -86,6 +103,13 @@ Java_com_google_android_filament_TransformManager_nSetParent(JNIEnv*, jclass,
             (TransformManager::Instance) newParent);
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_google_android_filament_TransformManager_nGetParent(JNIEnv*, jclass,
+        jlong nativeTransformManager, jint i) {
+    TransformManager* tm = (TransformManager*) nativeTransformManager;
+    return tm->getParent((TransformManager::Instance) i).getId();
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_google_android_filament_TransformManager_nSetTransform(JNIEnv* env,
         jclass, jlong nativeTransformManager, jint i,
@@ -95,6 +119,17 @@ Java_com_google_android_filament_TransformManager_nSetTransform(JNIEnv* env,
     tm->setTransform((TransformManager::Instance) i,
             *reinterpret_cast<const filament::math::mat4f *>(localTransform));
     env->ReleaseFloatArrayElements(localTransform_, localTransform, JNI_ABORT);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_TransformManager_nSetTransformFp64(JNIEnv* env,
+        jclass, jlong nativeTransformManager, jint i,
+        jdoubleArray localTransform_) {
+    TransformManager* tm = (TransformManager*) nativeTransformManager;
+    jdouble *localTransform = env->GetDoubleArrayElements(localTransform_, NULL);
+    tm->setTransform((TransformManager::Instance) i,
+            *reinterpret_cast<const filament::math::mat4 *>(localTransform));
+    env->ReleaseDoubleArrayElements(localTransform_, localTransform, JNI_ABORT);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -109,6 +144,17 @@ Java_com_google_android_filament_TransformManager_nGetTransform(JNIEnv* env,
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_TransformManager_nGetTransformFp64(JNIEnv* env,
+        jclass, jlong nativeTransformManager, jint i,
+        jdoubleArray outLocalTransform_) {
+    TransformManager* tm = (TransformManager*) nativeTransformManager;
+    jdouble *outLocalTransform = env->GetDoubleArrayElements(outLocalTransform_, NULL);
+    *reinterpret_cast<filament::math::mat4 *>(outLocalTransform) = tm->getTransformAccurate(
+            (TransformManager::Instance) i);
+    env->ReleaseDoubleArrayElements(outLocalTransform_, outLocalTransform, 0);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_google_android_filament_TransformManager_nGetWorldTransform(JNIEnv* env,
         jclass, jlong nativeTransformManager, jint i,
         jfloatArray outWorldTransform_) {
@@ -117,6 +163,17 @@ Java_com_google_android_filament_TransformManager_nGetWorldTransform(JNIEnv* env
     *reinterpret_cast<filament::math::mat4f *>(outWorldTransform) = tm->getWorldTransform(
             (TransformManager::Instance) i);
     env->ReleaseFloatArrayElements(outWorldTransform_, outWorldTransform, 0);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_TransformManager_nGetWorldTransformFp64(JNIEnv* env,
+        jclass, jlong nativeTransformManager, jint i,
+        jdoubleArray outWorldTransform_) {
+    TransformManager* tm = (TransformManager*) nativeTransformManager;
+    jdouble *outWorldTransform = env->GetDoubleArrayElements(outWorldTransform_, NULL);
+    *reinterpret_cast<filament::math::mat4 *>(outWorldTransform) = tm->getWorldTransformAccurate(
+            (TransformManager::Instance) i);
+    env->ReleaseDoubleArrayElements(outWorldTransform_, outWorldTransform, 0);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -131,4 +188,20 @@ Java_com_google_android_filament_TransformManager_nCommitLocalTransformTransacti
         JNIEnv*, jclass, jlong nativeTransformManager) {
     TransformManager* tm = (TransformManager*) nativeTransformManager;
     tm->commitLocalTransformTransaction();
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_google_android_filament_TransformManager_nSetAccurateTranslationsEnabled(JNIEnv*,
+        jclass, jlong nativeTransformManager, jboolean enable) {
+    TransformManager* tm = (TransformManager*) nativeTransformManager;
+    tm->setAccurateTranslationsEnabled((bool)enable);
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_com_google_android_filament_TransformManager_nIsAccurateTranslationsEnabled(JNIEnv*,
+        jclass, jlong nativeTransformManager) {
+    TransformManager* tm = (TransformManager*) nativeTransformManager;
+    return (jboolean)tm->isAccurateTranslationsEnabled();
 }

@@ -45,7 +45,7 @@ import java.nio.Buffer;
  *
  *     ...
  *
- *     assetLoader = AssetLoader(engine, MaterialProvider(engine), EntityManager.get())
+ *     assetLoader = AssetLoader(engine, UbershaderLoader(engine), EntityManager.get())
  *
  *     filamentAsset = assets.open("models/lucy.gltf").use { input -&gt;
  *         val bytes = ByteArray(input.available())
@@ -78,34 +78,36 @@ import java.nio.Buffer;
 public class AssetLoader {
     private long mNativeObject;
     private Engine mEngine;
+    private MaterialProvider mMaterialCache;
 
     /**
-     * Constructs an <code>AssetLoader </code>that can be used to create and destroy instances of
+     * Constructs an <code>AssetLoader</code> that can be used to create and destroy instances of
      * {@link FilamentAsset}.
      *
      * @param engine the engine that the loader should pass to builder objects
-     * @param generator specifies if materials should be generated or loaded from a pre-built set
+     * @param provider an object that provides Filament materials corresponding to glTF materials
      * @param entities the EntityManager that should be used to create entities
      */
-    public AssetLoader(@NonNull Engine engine, @NonNull MaterialProvider generator,
+    public AssetLoader(@NonNull Engine engine, @NonNull MaterialProvider provider,
             @NonNull EntityManager entities) {
 
         long nativeEngine = engine.getNativeObject();
-        long nativeMaterials = generator.getNativeObject();
         long nativeEntities = entities.getNativeObject();
-        mNativeObject = nCreateAssetLoader(nativeEngine, nativeMaterials, nativeEntities);
+        mNativeObject = nCreateAssetLoader(nativeEngine, provider, nativeEntities);
 
         if (mNativeObject == 0) {
             throw new IllegalStateException("Unable to parse glTF asset.");
         }
 
         mEngine = engine;
+        mMaterialCache = provider;
     }
 
     /**
      * Frees all memory consumed by the native <code>AssetLoader</code> and its material cache.
      */
     public void destroy() {
+        mMaterialCache.destroyMaterials();
         nDestroyAssetLoader(mNativeObject);
         mNativeObject = 0;
     }
@@ -146,10 +148,37 @@ public class AssetLoader {
         if (nativeAsset == 0) {
             return null;
         }
+        FilamentAsset asset = new FilamentAsset(mEngine, nativeAsset);
         for (int i = 0; i < nativeInstances.length; i++) {
-            instances[i] = new FilamentInstance(nativeInstances[i]);
+            instances[i] = new FilamentInstance(asset, nativeInstances[i]);
         }
-        return new FilamentAsset(mEngine, nativeAsset);
+        return asset;
+    }
+
+    /**
+     * Adds a new instance to an instanced asset.
+     *
+     * Use this with caution. It is more efficient to pre-allocate a max number of instances, and
+     * gradually add them to the scene as needed. Instances can also be "recycled" by removing and
+     * re-adding them to the scene.
+     *
+     * NOTE: destroyInstance() does not exist because gltfio favors flat arrays for storage of
+     * entity lists and instance lists, which would be slow to shift. We also wish to discourage
+     * create/destroy churn, as noted above.
+     *
+     * This cannot be called after FilamentAsset#releaseSourceData().
+     * This cannot be called on a non-instanced asset.
+     * Animation is not supported in new instances.
+     * See also AssetLoader#createInstancedAsset().
+     */
+    @Nullable
+    @SuppressWarnings("unused")
+    public FilamentInstance createInstance(@NonNull FilamentAsset asset) {
+        long nativeInstance = nCreateInstance(mNativeObject, asset.getNativeObject());
+        if (nativeInstance == 0) {
+            return null;
+        }
+        return new FilamentInstance(asset, nativeInstance);
     }
 
     /**
@@ -168,13 +197,14 @@ public class AssetLoader {
         asset.clearNativeObject();
     }
 
-    private static native long nCreateAssetLoader(long nativeEngine, long nativeGenerator,
+    private static native long nCreateAssetLoader(long nativeEngine, Object provider,
             long nativeEntities);
     private static native void nDestroyAssetLoader(long nativeLoader);
     private static native long nCreateAssetFromBinary(long nativeLoader, Buffer buffer, int remaining);
     private static native long nCreateAssetFromJson(long nativeLoader, Buffer buffer, int remaining);
     private static native long nCreateInstancedAsset(long nativeLoader, Buffer buffer, int remaining,
             long[] nativeInstances);
+    private static native long nCreateInstance(long nativeLoader, long nativeAsset);
     private static native void nEnableDiagnostics(long nativeLoader, boolean enable);
     private static native void nDestroyAsset(long nativeLoader, long nativeAsset);
 }

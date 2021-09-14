@@ -25,6 +25,7 @@
 #include <filament/Material.h>
 #include <filament/MaterialInstance.h>
 #include <filament/Texture.h>
+#include <filament/TextureSampler.h>
 #include <filament/VertexBuffer.h>
 #include <filament/View.h>
 
@@ -33,25 +34,26 @@
 
 struct ImDrawData;
 struct ImGuiIO;
+struct ImGuiContext;
 
 namespace filagui {
 
 // Translates ImGui's draw commands into Filament primitives, textures, vertex buffers, etc.
 // Creates a UI-specific Scene object and populates it with a Renderable. Does not handle
 // event processing; clients can simply call ImGui::GetIO() directly and set the mouse state.
-class ImGuiHelper {
+class UTILS_PUBLIC ImGuiHelper {
 public:
     // Using std::function instead of a vanilla C callback to make it easy for clients to pass in
     // lambdas that have captures.
     using Callback = std::function<void(filament::Engine*, filament::View*)>;
 
     // The constructor creates its own Scene and places it in the given View.
-    ImGuiHelper(filament::Engine* engine, filament::View* view, const utils::Path& fontPath);
+    ImGuiHelper(filament::Engine* engine, filament::View* view, const utils::Path& fontPath,
+            ImGuiContext* imGuiContext = nullptr);
     ~ImGuiHelper();
 
-    // Informs ImGui of the current display size, as well as the pixel ratio for high DPI displays.
-    // The display size is given in terms of virtual pixels, not physical pixels.
-    void setDisplaySize(int width, int height, float scaleX = 0.0f, float scaleY = 0.0f);
+    // Informs ImGui of the current display size, as well as a scaling factor when scissoring.
+    void setDisplaySize(int width, int height, float scaleX = 1.0f, float scaleY = 1.0f);
 
     // High-level utility method that takes a callback for creating all ImGui windows and widgets.
     // Clients are responsible for rendering the View. This should be called on every frame,
@@ -81,12 +83,16 @@ public:
       filament::View* mView; // The view is owned by the client.
       filament::Scene* mScene;
       filament::Material* mMaterial = nullptr;
+      filament::Camera* mCamera = nullptr;
       std::vector<filament::VertexBuffer*> mVertexBuffers;
       std::vector<filament::IndexBuffer*> mIndexBuffers;
       std::vector<filament::MaterialInstance*> mMaterialInstances;
       utils::Entity mRenderable;
+      utils::Entity mCameraEntity;
       filament::Texture* mTexture = nullptr;
       bool mHasSynced = false;
+      ImGuiContext* mImGuiContext;
+      filament::TextureSampler mSampler;
 };
 
 } // namespace filagui

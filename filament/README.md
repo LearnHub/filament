@@ -7,10 +7,14 @@ Filament. Latest versions are available on the [project page](https://github.com
 
 - `cmgen`, Image-based lighting asset generator
 - `filamesh`, Mesh converter
+- `glslminifier`, Tool to minify GLSL shaders
+- `gltf_viewer`, glTF 2.0 viewer that lets you explore many features of Filament
 - `matc`, Material compiler
+- `material_sandbox`, simple mesh viewer that lets you explore material and lighting features
 - `matinfo`, Displays information about materials compiled with `matc`
 - `mipgen`, Generates a series of miplevels from a source image.
 - `normal-blending`, Tool to blend normal maps
+- `resgen`, Tool to convert files into binary resources to be embedded at compie time
 - `roughness-prefilter`, Pre-filters a roughness map from a normal map to reduce aliasing
 - `specular-color`, Computes the specular color of conductors based on spectral data
 
@@ -87,7 +91,7 @@ Copy your platform's Makefile below into a `Makefile` inside the same directory.
 ### Linux
 
 ```
-FILAMENT_LIBS=-lfilament -lbackend -lbluegl -lbluevk -lfilabridge -lfilaflat -lutils -lgeometry -lsmol-v -libl
+FILAMENT_LIBS=-lfilament -lbackend -lbluegl -lbluevk -lfilabridge -lfilaflat -lutils -lgeometry -lsmol-v -lvkshaders -libl
 CC=clang++
 
 main: main.o
@@ -105,7 +109,7 @@ clean:
 ### macOS
 
 ```
-FILAMENT_LIBS=-lfilament -lbackend -lbluegl -lbluevk -lfilabridge -lfilaflat -lutils -lgeometry -lsmol-v -libl
+FILAMENT_LIBS=-lfilament -lbackend -lbluegl -lbluevk -lfilabridge -lfilaflat -lutils -lgeometry -lsmol-v -lvkshaders -libl
 FRAMEWORKS=-framework Cocoa -framework Metal -framework CoreVideo
 CC=clang++
 
@@ -134,7 +138,7 @@ used to change the run-time library version.
 
 ```
 FILAMENT_LIBS=filament.lib backend.lib bluegl.lib bluevk.lib filabridge.lib filaflat.lib \
-              utils.lib geometry.lib smol-v.lib ibl.lib
+              utils.lib geometry.lib smol-v.lib ibl.lib vkshaders.lib
 CC=cl.exe
 
 main.exe: main.obj

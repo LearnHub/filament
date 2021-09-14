@@ -18,6 +18,10 @@
 
 #include <math/mat4.h>
 
+#include <utils/debug.h>
+#include <filament/TransformManager.h>
+
+
 using namespace utils;
 using namespace filament::math;
 
@@ -30,8 +34,18 @@ FTransformManager::~FTransformManager() noexcept = default;
 void FTransformManager::terminate() noexcept {
 }
 
+void FTransformManager::setAccurateTranslationsEnabled(bool enable) noexcept {
+    if (enable != mAccurateTranslations) {
+        mAccurateTranslations = enable;
+        // when enabling accurate translations, we have to recompute all world transforms
+        if (enable && !mLocalTransformTransactionOpen) {
+            computeAllWorldTransforms();
+        }
+    }
+}
+
 void FTransformManager::create(Entity entity) {
-    create(entity, 0, {});
+    create(entity, 0, mat4f{});
 }
 
 void FTransformManager::create(Entity entity, Instance parent, const mat4f& localTransform) {
@@ -43,8 +57,30 @@ void FTransformManager::create(Entity entity, Instance parent, const mat4f& loca
         destroy(entity);
     }
     Instance i = manager.addComponent(entity);
-    assert(i);
-    assert(i != parent);
+    assert_invariant(i);
+    assert_invariant(i != parent);
+
+    if (i && i != parent) {
+        manager[i].parent = 0;
+        manager[i].next = 0;
+        manager[i].prev = 0;
+        manager[i].firstChild = 0;
+        insertNode(i, parent);
+        setTransform(i, localTransform);
+    }
+}
+
+void FTransformManager::create(Entity entity, Instance parent, const mat4& localTransform) {
+    // this always adds at the end, so all existing instances stay valid
+    auto& manager = mManager;
+
+    // TODO: try to keep entries sorted with their siblings/parents to improve cache access
+    if (UTILS_UNLIKELY(manager.hasComponent(entity))) {
+        destroy(entity);
+    }
+    Instance i = manager.addComponent(entity);
+    assert_invariant(i);
+    assert_invariant(i != parent);
 
     if (i && i != parent) {
         manager[i].parent = 0;
@@ -137,6 +173,18 @@ void FTransformManager::setTransform(Instance ci, const mat4f& model) noexcept {
         auto& manager = mManager;
         // store our local transform
         manager[ci].local = model;
+        manager[ci].localTranslationLo = {};
+        updateNodeTransform(ci);
+    }
+}
+
+void FTransformManager::setTransform(Instance ci, const mat4& model) noexcept {
+    validateNode(ci);
+    if (ci) {
+        auto& manager = mManager;
+        // store our local transform + accurate translation information
+        manager[ci].local = mat4f(model);
+        manager[ci].localTranslationLo = float3{ model[3].xyz - float3{ model[3].xyz }};
         updateNodeTransform(ci);
     }
 }
@@ -148,15 +196,15 @@ void FTransformManager::updateNodeTransform(Instance i) noexcept {
 
     validateNode(i);
     auto& manager = mManager;
-    assert(i);
+    assert_invariant(i);
 
     // find our parent's world transform, if any
     // note: by using the raw_array() we don't need to check that parent is valid.
     Instance parent = manager[i].parent;
-    mat4f const& pt = manager.raw_array<WORLD>()[parent];
-
-    // compute our world transform
-    manager[i].world = pt * static_cast<mat4f const&>(manager[i].local);
+    computeWorldTransform(manager[i].world, manager[i].worldTranslationLo,
+            manager[parent].world, manager[i].local,
+            manager[parent].worldTranslationLo, manager[i].localTranslationLo,
+            mAccurateTranslations);
 
     // update our children's world transforms
     Instance child = manager[i].firstChild;
@@ -172,22 +220,30 @@ void FTransformManager::openLocalTransformTransaction() noexcept {
 void FTransformManager::commitLocalTransformTransaction() noexcept {
     if (mLocalTransformTransactionOpen) {
         mLocalTransformTransactionOpen = false;
-        auto& manager = mManager;
+        computeAllWorldTransforms();
+    }
+}
 
-        // swapNode() below needs some temporary storage which we provide here
-        auto& soa = manager.getSoA();
-        soa.ensureCapacity(soa.size() + 1);
+void FTransformManager::computeAllWorldTransforms() noexcept {
+    auto& manager = mManager;
 
-        mat4f const* const UTILS_RESTRICT world = manager.raw_array<WORLD>();
-        for (Instance i = manager.begin(), e = manager.end(); i != e; ++i) {
-            // Ensure that children are always sorted after their parent.
-            while (UTILS_UNLIKELY(Instance(manager[i].parent) > i)) {
-                swapNode(i, manager[i].parent);
-            }
-            Instance parent = manager[i].parent;
-            assert(parent < i);
-            manager[i].world = world[parent] * static_cast<mat4f const&>(manager[i].local);
+    // swapNode() below needs some temporary storage which we provide here
+    const bool accurate = mAccurateTranslations;
+    auto& soa = manager.getSoA();
+    soa.ensureCapacity(soa.size() + 1);
+
+    for (Instance i = manager.begin(), e = manager.end(); i != e; ++i) {
+        // Ensure that children are always sorted after their parent.
+        while (UTILS_UNLIKELY(Instance(manager[i].parent) > i)) {
+            swapNode(i, manager[i].parent);
         }
+        Instance parent = manager[i].parent;
+        assert_invariant(parent < i);
+
+        computeWorldTransform(manager[i].world, manager[i].worldTranslationLo,
+                manager[parent].world, manager[i].local,
+                manager[parent].worldTranslationLo, manager[i].localTranslationLo,
+                accurate);
     }
 }
 
@@ -195,7 +251,7 @@ void FTransformManager::commitLocalTransformTransaction() noexcept {
 void FTransformManager::insertNode(Instance i, Instance parent) noexcept {
     auto& manager = mManager;
 
-    assert(manager[i].parent == Instance{});
+    assert_invariant(manager[i].parent == Instance{});
 
     manager[i].parent = parent;
     manager[i].prev = 0;
@@ -231,7 +287,7 @@ void FTransformManager::swapNode(Instance i, Instance j) noexcept {
     // node to fix-up the linked-list pointers
     // Here we are guaranteed to have enough capacity for our temporary storage, so we
     // can safely use the item just past the end of the array.
-    assert(manager.getSoA().capacity() >= manager.getSoA().size() + 1);
+    assert_invariant(manager.getSoA().capacity() >= manager.getSoA().size() + 1);
 
     const Instance t = manager.end();
 
@@ -301,7 +357,7 @@ void FTransformManager::updateNode(Instance i) noexcept {
     // re-parent our children to us
     Instance child = manager[i].firstChild;
     while (child) {
-        assert(child != i);
+        assert_invariant(child != i);
         manager[child].parent = i;
         child = manager[child].next;
     }
@@ -311,24 +367,61 @@ void FTransformManager::updateNode(Instance i) noexcept {
     validateNode(next);
 }
 
-void FTransformManager::transformChildren(Sim& manager, Instance ci) noexcept {
-    while (ci) {
+void FTransformManager::transformChildren(Sim& manager, Instance i) noexcept {
+    const bool accurate = mAccurateTranslations;
+    while (i) {
         // update child's world transform
-        Instance parent = manager[ci].parent;
-        mat4f const& pt = manager[parent].world;
-        mat4f const& local = manager[ci].local;
-        manager[ci].world = pt * local;
+        Instance parent = manager[i].parent;
+        computeWorldTransform(manager[i].world, manager[i].worldTranslationLo,
+                manager[parent].world, manager[i].local,
+                manager[parent].worldTranslationLo, manager[i].localTranslationLo,
+                accurate);
 
         // assume we don't have a deep hierarchy
-        Instance child = manager[ci].firstChild;
+        Instance child = manager[i].firstChild;
         if (UTILS_UNLIKELY(child)) {
             transformChildren(manager, child);
         }
 
         // process our next child
-        ci = manager[ci].next;
+        i = manager[i].next;
     }
 }
+
+void FTransformManager::computeWorldTransform(
+        mat4f& UTILS_RESTRICT outWorld,
+        float3& UTILS_RESTRICT inoutWorldTranslationLo,
+        mat4f const& UTILS_RESTRICT pt,
+        mat4f const& UTILS_RESTRICT local,
+        float3 const& UTILS_RESTRICT ptTranslationLo,       // reference to avoid unneeded access
+        float3 const& UTILS_RESTRICT localTranslationLo,    // reference to avoid unneeded access
+        bool accurate) {
+
+    outWorld[0] = pt * local[0];
+    outWorld[1] = pt * local[1];
+    outWorld[2] = pt * local[2];
+
+    // "a branch not taken is free", i.e.: we burn a BT cache entry only in the accurate case
+    if (UTILS_LIKELY(!accurate)) {
+        outWorld[3] = pt * local[3];
+    } else {
+        // this version takes the extra precision of the translation into account,
+        // we assume that the last row of local is [0 0 0 x].
+        // Only the last column of the result needs special treatment -- unfortunately this requires
+        // converting 'pt' to a mat4 (double)
+
+        const mat4 ptd{
+                pt[0], pt[1], pt[2],
+                double4{ pt[3].xyz + ptTranslationLo, pt[3].w }};
+
+        const double4 worldTranslation =
+                ptd * double4{ local[3].xyz + localTranslationLo, local[3].w };
+
+        inoutWorldTranslationLo = worldTranslation.xyz - float3{ worldTranslation.xyz };
+        outWorld[3] = worldTranslation;
+    }
+}
+
 
 void FTransformManager::validateNode(Instance i) noexcept {
 #ifndef NDEBUG
@@ -338,35 +431,35 @@ void FTransformManager::validateNode(Instance i) noexcept {
         Instance firstChild = manager[i].firstChild;
         Instance prev = manager[i].prev;
         Instance next = manager[i].next;
-        assert(parent != i);
-        assert(prev != i);
-        assert(next != i);
-        assert(firstChild != i);
+        assert_invariant(parent != i);
+        assert_invariant(prev != i);
+        assert_invariant(next != i);
+        assert_invariant(firstChild != i);
         if (prev) {
             if (parent) {
-                assert(manager[parent].firstChild != i);
+                assert_invariant(manager[parent].firstChild != i);
             }
-            assert(manager[prev].next == i);
+            assert_invariant(manager[prev].next == i);
         } else {
             if (parent) {
-                assert(manager[parent].firstChild == i);
+                assert_invariant(manager[parent].firstChild == i);
             }
         }
         if (next) {
-            assert(manager[next].prev == i);
+            assert_invariant(manager[next].prev == i);
         }
         if (parent) {
             // make sure we are in the child list of our parent
             Instance child = manager[parent].firstChild;
-            assert(child);
+            assert_invariant(child);
             while (child && child != i) {
                 child = manager[child].next;
             }
-            assert(child);
+            assert_invariant(child);
         }
         if (firstChild) {
-            assert(manager[firstChild].parent == i);
-            assert(manager[firstChild].prev == 0);
+            assert_invariant(manager[firstChild].parent == i);
+            assert_invariant(manager[firstChild].prev == 0);
         }
     }
 #endif
@@ -393,8 +486,12 @@ void TransformManager::create(Entity entity, Instance parent, const mat4f& world
     upcast(this)->create(entity, parent, worldTransform);
 }
 
+void TransformManager::create(Entity entity, Instance parent, const mat4& worldTransform) {
+    upcast(this)->create(entity, parent, worldTransform);
+}
+
 void TransformManager::create(Entity entity, Instance parent) {
-    upcast(this)->create(entity, parent, {});
+    upcast(this)->create(entity, parent, mat4f{});
 }
 
 void TransformManager::destroy(Entity e) noexcept {
@@ -413,12 +510,24 @@ void TransformManager::setTransform(Instance ci, const mat4f& model) noexcept {
     upcast(this)->setTransform(ci, model);
 }
 
+void TransformManager::setTransform(Instance ci, const mat4& model) noexcept {
+    upcast(this)->setTransform(ci, model);
+}
+
 const mat4f& TransformManager::getTransform(Instance ci) const noexcept {
     return upcast(this)->getTransform(ci);
 }
 
+const mat4 TransformManager::getTransformAccurate(Instance ci) const noexcept {
+    return upcast(this)->getTransformAccurate(ci);
+}
+
 const mat4f& TransformManager::getWorldTransform(Instance ci) const noexcept {
     return upcast(this)->getWorldTransform(ci);
+}
+
+const mat4 TransformManager::getWorldTransformAccurate(Instance ci) const noexcept {
+    return upcast(this)->getWorldTransformAccurate(ci);
 }
 
 void TransformManager::setParent(Instance i, Instance newParent) noexcept {
@@ -454,6 +563,14 @@ TransformManager::children_iterator TransformManager::getChildrenBegin(
 TransformManager::children_iterator TransformManager::getChildrenEnd(
         TransformManager::Instance parent) const noexcept {
     return upcast(this)->getChildrenEnd(parent);
+}
+
+void TransformManager::setAccurateTranslationsEnabled(bool enable) noexcept {
+    upcast(this)->setAccurateTranslationsEnabled(enable);
+}
+
+bool TransformManager::isAccurateTranslationsEnabled() const noexcept {
+    return upcast(this)->isAccurateTranslationsEnabled();;
 }
 
 } // namespace filament

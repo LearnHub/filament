@@ -100,12 +100,15 @@ def deduce_software_version(directory):
         for line in f.readlines():
             match = pattern.match(line)
             if match:
+                flavor = match.group(4)
+                if flavor == None:
+                    flavor = ""
                 return {
                     "major": match.group(1),
                     "minor": match.group(2),
                     "patch": match.group(3),
-                    "flavor": match.group(4).lstrip("-"),
-                    "-flavor": match.group(4),
+                    "flavor": flavor.lstrip("-"),
+                    "-flavor": flavor,
                     "date": match.group(5),
                 }
     raise Exception('No version number found in {}'.format(changes_file))
@@ -198,13 +201,13 @@ def main():
     software_version = deduce_software_version(directory)
     commit = describe(directory)
     output = template \
-        .replace("<major>", software_version["major"]) \
-        .replace("<minor>", software_version["minor"]) \
-        .replace("<patch>", software_version["patch"]) \
-        .replace("<flavor>", software_version["flavor"]) \
-        .replace("<-flavor>", software_version["-flavor"]) \
-        .replace("<date>", software_version["date"]) \
-        .replace("<commit>", commit)
+        .replace("@major@", software_version["major"]) \
+        .replace("@minor@", software_version["minor"]) \
+        .replace("@patch@", software_version["patch"]) \
+        .replace("@flavor@", software_version["flavor"]) \
+        .replace("@-flavor@", software_version["-flavor"]) \
+        .replace("@date@", software_version["date"]) \
+        .replace("@commit@", commit)
 
     if output_file is None:
         print(output)

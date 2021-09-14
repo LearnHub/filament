@@ -4,9 +4,9 @@
 # correct packages so that you do not interfere with other Python projects in your system.
 # After installing pipenv, run the following commands from the current folder:
 #
-#  pipenv --python /usr/local/opt/python@3.8/bin/python3
-#  pipenv shell
+#  pipenv --python /usr/local/opt/python@3.9/bin/python3
 #  pipenv install
+#  pipenv shell
 #  ./build.py
 
 """Converts markdown into HTML and extracts JavaScript code blocks.
@@ -319,8 +319,6 @@ def gather_docstrings(paths):
                 stack[-1] = entity
             elif 'retval' in tags or 'argument' in tags:
                 stack[-1]["children"].append(entity)
-            else:
-                assert False
             previous = entity
         else:
             brief = previous["brief"]

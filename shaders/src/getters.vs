@@ -6,12 +6,6 @@ mat4 getLightFromWorldMatrix() {
     return frameUniforms.lightFromWorldMatrix[0];
 }
 
-#if defined(HAS_SHADOWING)
-mat4 getSpotLightFromWorldMatrix(uint index) {
-    return shadowUniforms.spotLightFromWorldMatrix[index];
-}
-#endif
-
 /** @public-api */
 mat4 getWorldFromModelMatrix() {
     return objectUniforms.worldFromModelMatrix;
@@ -75,14 +69,14 @@ vec4 getPosition() {
 
 #if defined(HAS_SKINNING_OR_MORPHING)
 
-    if (objectUniforms.morphingEnabled == 1) {
+    if ((objectUniforms.flags & FILAMENT_OBJECT_MORPHING_ENABLED_BIT) != 0u) {
         pos += objectUniforms.morphWeights.x * mesh_custom0;
         pos += objectUniforms.morphWeights.y * mesh_custom1;
         pos += objectUniforms.morphWeights.z * mesh_custom2;
         pos += objectUniforms.morphWeights.w * mesh_custom3;
     }
 
-    if (objectUniforms.skinningEnabled == 1) {
+    if ((objectUniforms.flags & FILAMENT_OBJECT_SKINNING_ENABLED_BIT) != 0u) {
         skinPosition(pos.xyz, mesh_bone_indices, mesh_bone_weights);
     }
 
@@ -116,6 +110,15 @@ vec4 getCustom6() { return mesh_custom6; }
 vec4 getCustom7() { return mesh_custom7; }
 #endif
 
+/** @public-api */
+int getVertexIndex() {
+#if defined(TARGET_METAL_ENVIRONMENT) || defined(TARGET_VULKAN_ENVIRONMENT)
+    return gl_VertexIndex;
+#else
+    return gl_VertexID;
+#endif
+}
+
 //------------------------------------------------------------------------------
 // Helpers
 //------------------------------------------------------------------------------
@@ -139,12 +142,17 @@ vec4 computeWorldPosition() {
     mat4 transform = getWorldFromViewMatrix();
     vec3 position = getPosition().xyz;
     return mulMat4x4Float3(transform, position);
-#else
+#elif defined(VERTEX_DOMAIN_DEVICE)
     mat4 transform = getWorldFromClipMatrix();
-    vec4 position = transform * getPosition();
+    vec4 p = getPosition();
+    // GL convention to inverted DX convention
+    p.z = p.z * -0.5 + 0.5;
+    vec4 position = transform * p;
     if (abs(position.w) < MEDIUMP_FLT_MIN) {
         position.w = position.w < 0.0 ? -MEDIUMP_FLT_MIN : MEDIUMP_FLT_MIN;
     }
     return position * (1.0 / position.w);
+#else
+#error Unknown Vertex Domain
 #endif
 }

@@ -7,7 +7,7 @@
 #define FROXEL_BUFFER_WIDTH         (1u << FROXEL_BUFFER_WIDTH_SHIFT)
 #define FROXEL_BUFFER_WIDTH_MASK    (FROXEL_BUFFER_WIDTH - 1u)
 
-#define RECORD_BUFFER_WIDTH_SHIFT   5u
+#define RECORD_BUFFER_WIDTH_SHIFT   4u
 #define RECORD_BUFFER_WIDTH         (1u << RECORD_BUFFER_WIDTH_SHIFT)
 #define RECORD_BUFFER_WIDTH_MASK    (RECORD_BUFFER_WIDTH - 1u)
 
@@ -30,9 +30,20 @@ uvec3 getFroxelCoords(const highp vec3 fragCoords) {
     froxelCoord.xy = uvec2(fragCoords.xy * frameUniforms.resolution.xy *
             vec2(frameUniforms.oneOverFroxelDimension, frameUniforms.oneOverFroxelDimensionY));
 
-    froxelCoord.z = uint(max(0.0,
-            log2(frameUniforms.zParams.x * fragCoords.z + frameUniforms.zParams.y) *
-                    frameUniforms.zParams.z + frameUniforms.zParams.w));
+    // go from screen-space to reciprocal of normalized view-space Z (i.e. scaled by 1/zLightFar)
+    // we get away with the reciprocal because 1/z is handled by the log2() below.
+    // see Froxelizer.cpp
+    highp float viewSpaceNormalizedZ = frameUniforms.zParams.x * fragCoords.z + frameUniforms.zParams.y;
+
+    // frameUniforms.zParams.w is actually the number of z-slices, make sure it's mediump
+    float zSliceCount = frameUniforms.zParams.w;
+
+    // compute the sliceZ mapping in highp, store in mediump
+    float sliceZWithoutOffset = log2(viewSpaceNormalizedZ) * frameUniforms.zParams.z;
+
+    // finally discretize the mapping into slices
+    // We need to clamp because the far plane (z=1) is out of bounds, any smaller z is not.
+    froxelCoord.z = uint(clamp(sliceZWithoutOffset + zSliceCount, 0.0, zSliceCount - 1.0));
 
     return froxelCoord;
 }
@@ -72,12 +83,16 @@ FroxelParams getFroxelParams(uint froxelIndex) {
 }
 
 /**
- * Returns the coordinates of the light record in the light_records texture
- * given the specified index. A light record is a single uint index into the
- * lights data buffer (lightsUniforms UBO).
+ * Return the light index from the record index
+ * A light record is a single uint index into the lights data buffer (lightsUniforms UBO).
  */
-ivec2 getRecordTexCoord(uint index) {
-    return ivec2(index & RECORD_BUFFER_WIDTH_MASK, index >> RECORD_BUFFER_WIDTH_SHIFT);
+uint getLightIndex(const uint index) {
+    uint v = index >> 4u;
+    uint c = (index >> 2u) & 0x3u;
+    uint s = (index & 0x3u) * 8u;
+    // this intermediate is needed to workaround a bug on qualcomm h/w
+    highp uvec4 d = froxelRecordUniforms.records[v];
+    return (d[c] >> s) & 0xFFu;
 }
 
 float getSquareFalloffAttenuation(float distanceSquare, float falloff) {
@@ -109,15 +124,26 @@ float getAngleAttenuation(const vec3 lightDir, const vec3 l, const vec2 scaleOff
  * The light parameters used to compute the Light structure are fetched from the
  * lightsUniforms uniform buffer.
  */
-Light getLight(const uint index) {
 
+Light getLight(const uint index) {
     // retrieve the light data from the UBO
-    ivec2 texCoord = getRecordTexCoord(index);
-    uint lightIndex = texelFetch(light_records, texCoord, 0).r;
-    highp vec4 positionFalloff       = lightsUniforms.lights[lightIndex][0];
-    highp vec4 colorIntensity        = lightsUniforms.lights[lightIndex][1];
-          vec4 directionIES          = lightsUniforms.lights[lightIndex][2];
-    highp vec4 scaleOffsetShadowType = lightsUniforms.lights[lightIndex][3];
+    uint lightIndex = getLightIndex(index);
+
+    highp mat4 data = lightsUniforms.lights[lightIndex];
+
+    highp vec4 positionFalloff = data[0];
+    vec4 color = vec4(
+        unpackHalf2x16(floatBitsToUint(data[1][0])),
+        unpackHalf2x16(floatBitsToUint(data[1][1]))
+    );
+    vec4 directionIES = vec4(
+        unpackHalf2x16(floatBitsToUint(data[1][2])),
+        unpackHalf2x16(floatBitsToUint(data[1][3]))
+    );
+    vec2 scaleOffset = unpackHalf2x16(floatBitsToUint(data[2][0]));
+    highp float intensity = data[2][1];
+    highp uint typeShadow = floatBitsToUint(data[2][2]);
+    highp uint channels = floatBitsToUint(data[2][3]);
 
     // poition-to-light vector
     highp vec3 worldPosition = vertex_worldPosition;
@@ -125,21 +151,25 @@ Light getLight(const uint index) {
 
     // and populate the Light structure
     Light light;
-    light.colorIntensity.rgb = colorIntensity.rgb;
-    light.colorIntensity.w = computePreExposedIntensity(colorIntensity.w, frameUniforms.exposure);
+    light.colorIntensity.rgb = color.rgb;
+    light.colorIntensity.w = computePreExposedIntensity(intensity, frameUniforms.exposure);
     light.l = normalize(posToLight);
     light.attenuation = getDistanceAttenuation(posToLight, positionFalloff.w);
     light.NoL = saturate(dot(shading_normal, light.l));
     light.worldPosition = positionFalloff.xyz;
+    light.castsShadows = false;
+    light.contactShadows = false;
+    light.shadowIndex = 0u;
+    light.shadowLayer = 0u;
+    light.channels = channels;
 
-    uint type = floatBitsToUint(scaleOffsetShadowType.w);
+    uint type = typeShadow & 0x1u;
     if (type == LIGHT_TYPE_SPOT) {
-        light.attenuation *= getAngleAttenuation(-directionIES.xyz, light.l, scaleOffsetShadowType.xy);
-        uint shadowBits = floatBitsToUint(scaleOffsetShadowType.z);
-        light.castsShadows = bool(shadowBits & 0x1u);
-        light.contactShadows = bool((shadowBits >> 1u) & 0x1u);
-        light.shadowIndex = (shadowBits >> 2u) & 0xFu;
-        light.shadowLayer = (shadowBits >> 6u) & 0xFu;
+        light.attenuation *= getAngleAttenuation(-directionIES.xyz, light.l, scaleOffset);
+        light.contactShadows = bool(typeShadow & 0x10u);
+        light.shadowIndex = (typeShadow >>  8u) & 0xFFu;
+        light.shadowLayer = (typeShadow >> 16u) & 0xFFu;
+        light.castsShadows   = bool(channels & 0x10000u);
     }
 
     return light;
@@ -150,10 +180,12 @@ Light getLight(const uint index) {
  * The result of the lighting computations is accumulated in the color
  * parameter, as linear HDR RGB.
  */
-void evaluatePunctualLights(const PixelParams pixel, inout vec3 color) {
+void evaluatePunctualLights(const MaterialInputs material,
+        const PixelParams pixel, inout vec3 color) {
+
     // Fetch the light information stored in the froxel that contains the
     // current fragment
-    FroxelParams froxel = getFroxelParams(getFroxelIndex(getNormalizedViewportCoord()));
+    FroxelParams froxel = getFroxelParams(getFroxelIndex(getNormalizedViewportCoord2()));
 
     // Each froxel contains how many lights can influence
     // the current fragment. A froxel also contains a record offset that
@@ -163,35 +195,45 @@ void evaluatePunctualLights(const PixelParams pixel, inout vec3 color) {
 
     uint index = froxel.recordOffset;
     uint end = index + froxel.count;
+    uint channels = objectUniforms.channels & 0xFFu;
 
     // Iterate point lights
     for ( ; index < end; index++) {
         Light light = getLight(index);
-        float visibility = 1.0;
-#if defined(HAS_SHADOWING)
-        if (light.NoL > 0.0){
-            if (light.castsShadows) {
-#if defined(HAS_VSM)
-                highp float fragDepth = length(vertex_worldPosition - light.worldPosition);
-                visibility = shadowVsm(light_shadowMap, light.shadowLayer,
-                    getSpotLightSpacePosition(light.shadowIndex), fragDepth);
-#else
-                visibility = shadow(light_shadowMap, light.shadowLayer,
-                    getSpotLightSpacePosition(light.shadowIndex));
-#endif
-            }
-            if (light.contactShadows && visibility > 0.0) {
-                if (objectUniforms.screenSpaceContactShadows != 0u) {
-                    visibility *= 1.0 - screenSpaceContactShadow(light.l);
-                }
-            }
+        if ((light.channels & channels) == 0u) {
+            continue;
         }
-#endif
+
 #if defined(MATERIAL_CAN_SKIP_LIGHTING)
-        if (light.NoL <= 0.0) {
+        if (light.NoL <= 0.0 || light.attenuation <= 0.0) {
             continue;
         }
 #endif
+
+        float visibility = 1.0;
+#if defined(HAS_SHADOWING)
+        if (light.NoL > 0.0) {
+            if (light.castsShadows) {
+                visibility = shadow(light_shadowMap, light.shadowLayer,
+                    getSpotLightSpacePosition(light.shadowIndex));
+            }
+            if (light.contactShadows && visibility > 0.0) {
+                if ((objectUniforms.flags & FILAMENT_OBJECT_CONTACT_SHADOWS_BIT) != 0u) {
+                    visibility *= 1.0 - screenSpaceContactShadow(light.l);
+                }
+            }
+#if defined(MATERIAL_CAN_SKIP_LIGHTING)
+            if (visibility <= 0.0) {
+                continue;
+            }
+#endif
+        }
+#endif
+
+#if defined(MATERIAL_HAS_CUSTOM_SURFACE_SHADING)
+        color.rgb += customSurfaceShading(material, pixel, light, visibility);
+#else
         color.rgb += surfaceShading(pixel, light, visibility);
+#endif
     }
 }

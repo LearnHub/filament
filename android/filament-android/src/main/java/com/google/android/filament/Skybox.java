@@ -23,8 +23,6 @@ import androidx.annotation.Size;
 
 import static com.google.android.filament.Colors.LinearColor;
 
-import com.google.android.filament.proguard.UsedByReflection;
-
 /**
  * Skybox
  * <p>When added to a {@link Scene}, the <code>Skybox</code> fills all untouched pixels.</p>
@@ -53,11 +51,7 @@ import com.google.android.filament.proguard.UsedByReflection;
 public class Skybox {
     private long mNativeObject;
 
-    public Skybox(Engine engine, long nativeSkybox) {
-        mNativeObject = nativeSkybox;
-    }
-
-    Skybox(long nativeSkybox) {
+    public Skybox(long nativeSkybox) {
         mNativeObject = nativeSkybox;
     }
 
@@ -115,13 +109,14 @@ public class Skybox {
         }
 
         /**
-         * Sets the <code>Skybox</code> intensity when no {@link IndirectLight} is set
+         * Sets the <code>Skybox</code> intensity when no {@link IndirectLight} is set on the
+         * {@link Scene}.
          *
-         * <p>This call is ignored when an  {@link IndirectLight} is set, otherwise it is used in
-         * its place.</p>
+         * <p>This call is ignored when an {@link IndirectLight} is set on the {@link Scene}, and
+         * the intensity of the {@link IndirectLight} is used instead.</p>
          *
          * @param envIntensity  Scale factor applied to the skybox texel values such that
-         *                      the result is in cd/m<sup>2</sup> (lux) units (default = 30000)
+         *                      the result is in <i>lux</i>, or <i>lumen/m^2</i> (default = 30000)
          *
          * @return This Builder, for chaining calls.
          *
@@ -237,7 +232,7 @@ public class Skybox {
     }
 
     /**
-     * Returns the <code>Skybox</code>'s intensity in cd/m<sup>2</sup>.
+     * Returns the <code>Skybox</code>'s intensity in <i>lux</i>, or <i>lumen/m^2</i>.
      */
     public float getIntensity() { return nGetIntensity(getNativeObject()); }
 

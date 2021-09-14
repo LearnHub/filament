@@ -2,43 +2,47 @@
 // Uniforms access
 //------------------------------------------------------------------------------
 
+#define FILAMENT_OBJECT_SKINNING_ENABLED_BIT   0x1u
+#define FILAMENT_OBJECT_MORPHING_ENABLED_BIT   0x2u
+#define FILAMENT_OBJECT_CONTACT_SHADOWS_BIT    0x4u
+
 /** @public-api */
-mat4 getViewFromWorldMatrix() {
+highp mat4 getViewFromWorldMatrix() {
     return frameUniforms.viewFromWorldMatrix;
 }
 
 /** @public-api */
-mat4 getWorldFromViewMatrix() {
+highp mat4 getWorldFromViewMatrix() {
     return frameUniforms.worldFromViewMatrix;
 }
 
 /** @public-api */
-mat4 getClipFromViewMatrix() {
+highp mat4 getClipFromViewMatrix() {
     return frameUniforms.clipFromViewMatrix;
 }
 
 /** @public-api */
-mat4 getViewFromClipMatrix() {
+highp mat4 getViewFromClipMatrix() {
     return frameUniforms.viewFromClipMatrix;
 }
 
 /** @public-api */
-mat4 getClipFromWorldMatrix() {
+highp mat4 getClipFromWorldMatrix() {
     return frameUniforms.clipFromWorldMatrix;
 }
 
 /** @public-api */
-mat4 getWorldFromClipMatrix() {
+highp mat4 getWorldFromClipMatrix() {
     return frameUniforms.worldFromClipMatrix;
 }
 
 /** @public-api */
-vec4 getResolution() {
+highp vec4 getResolution() {
     return frameUniforms.resolution;
 }
 
 /** @public-api */
-vec3 getWorldCameraPosition() {
+highp vec3 getWorldCameraPosition() {
     return frameUniforms.cameraPosition;
 }
 
@@ -64,6 +68,8 @@ highp float getUserTimeMod(float m) {
 
 /** @public-api */
 float getExposure() {
+    // NOTE: this is a highp uniform only to work around #3602 (qualcomm)
+    // We are intentionally casting it to mediump here, as per the Materials doc.
     return frameUniforms.exposure;
 }
 

@@ -30,6 +30,7 @@
 #include <filament/MaterialEnums.h>
 #include <private/filament/SamplerInterfaceBlock.h>
 #include <private/filament/UniformInterfaceBlock.h>
+#include <private/filament/SubpassInfo.h>
 
 #include <utils/sstream.h>
 
@@ -41,6 +42,7 @@ class UTILS_PRIVATE CodeGenerator {
     using ShaderType = filament::backend::ShaderType;
     using TargetApi = MaterialBuilder::TargetApi;
     using TargetLanguage = MaterialBuilder::TargetLanguage;
+    using ShaderQuality = MaterialBuilder::ShaderQuality;
 public:
     CodeGenerator(filament::backend::ShaderModel shaderModel,
             TargetApi targetApi, TargetLanguage targetLanguage) noexcept
@@ -73,7 +75,7 @@ public:
 
     // generate the shader's code for the lit shading model
     utils::io::sstream& generateShaderLit(utils::io::sstream& out, ShaderType type,
-            filament::Variant variant, filament::Shading shading) const;
+            filament::Variant variant, filament::Shading shading, bool customSurfaceShading) const;
 
     // generate the shader's code for the unlit shading model
     utils::io::sstream& generateShaderUnlit(utils::io::sstream& out, ShaderType type,
@@ -105,9 +107,15 @@ public:
     utils::io::sstream& generateSamplers(
         utils::io::sstream& out, uint8_t firstBinding, const filament::SamplerInterfaceBlock& sib) const;
 
+    // generate subpass
+    utils::io::sstream& generateSubpass(utils::io::sstream& out,
+            filament::SubpassInfo subpass) const;
+
     // generate material properties getters
     utils::io::sstream& generateMaterialProperty(utils::io::sstream& out,
             MaterialBuilder::Property property, bool isSet) const;
+
+    utils::io::sstream& generateQualityDefine(utils::io::sstream& out, ShaderQuality quality) const;
 
     utils::io::sstream& generateDefine(utils::io::sstream& out, const char* name, bool value) const;
     utils::io::sstream& generateDefine(utils::io::sstream& out, const char* name, uint32_t value) const;

@@ -8,6 +8,7 @@ struct Light {
     bool contactShadows;
     uint shadowIndex;
     uint shadowLayer;
+    uint channels;
 };
 
 struct PixelParams {
@@ -23,6 +24,16 @@ struct PixelParams {
     float clearCoat;
     float clearCoatPerceptualRoughness;
     float clearCoatRoughness;
+#endif
+
+#if defined(MATERIAL_HAS_SHEEN_COLOR)
+    vec3  sheenColor;
+#if !defined(SHADING_MODEL_CLOTH)
+    float sheenRoughness;
+    float sheenPerceptualRoughness;
+    float sheenScaling;
+    float sheenDFG;
+#endif
 #endif
 
 #if defined(MATERIAL_HAS_ANISOTROPY)
@@ -48,7 +59,7 @@ struct PixelParams {
     float etaIR;
     float transmission;
     float uThickness;
-    vec3 absorption;
+    vec3  absorption;
 #endif
 };
 

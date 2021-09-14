@@ -42,6 +42,8 @@ export type BufferReference = string | ArrayBufferView;
 export type float2 = glm.vec2|number[];
 export type float3 = glm.vec3|number[];
 export type float4 = glm.vec4|number[];
+export type double2 = glm.vec2|number[];
+export type double3 = glm.vec3|number[];
 export type double4 = glm.vec4|number[];
 export type mat3 = glm.mat3|number[];
 export type mat4 = glm.mat4|number[];
@@ -100,10 +102,10 @@ export interface View$AmbientOcclusionOptions {
 }
 
 export interface View$DepthOfFieldOptions {
-    focusDistance?: number;
     cocScale?: number;
     maxApertureDiameter?: number;
     enabled?: boolean;
+    filter?: View$DepthOfFieldOptions$Filter;
 }
 
 export interface View$BloomOptions {
@@ -115,6 +117,7 @@ export interface View$BloomOptions {
     blendMode?: View$BloomOptions$BlendMode;
     threshold?: boolean;
     enabled?: boolean;
+    highlight?: number;
     // TODO: add support for dirt texture in BloomOptions.
 }
 
@@ -139,6 +142,9 @@ export interface View$VignetteOptions {
     enabled?: boolean;
 }
 
+export function fitIntoUnitCube(box: Aabb): mat4;
+export function multiplyMatrices(a: mat4, b: mat4): mat4;
+
 // Clients should use the [PixelBuffer/CompressedPixelBuffer] helper function to contruct PixelBufferDescriptor objects.
 export class driver$PixelBufferDescriptor {
     constructor(byteLength: number, format: PixelDataFormat, datatype: PixelDataType);
@@ -154,7 +160,7 @@ export class Texture$Builder {
     public levels(levels: number): Texture$Builder;
     public sampler(sampler: Texture$Sampler): Texture$Builder;
     public format(format: Texture$InternalFormat): Texture$Builder;
-    public usage(usage: Texture$Usage): Texture$Builder;
+    public usage(usage: number): Texture$Builder;
     public build(engine: Engine) : Texture;
 }
 
@@ -190,6 +196,8 @@ export class TransformManager$Instance {
 
 export class TextureSampler {
     constructor(minfilter: MinFilter, magfilter: MagFilter, wrapmode: WrapMode);
+    public setAnisotropy(value: number): void;
+    public setCompareMode(mode: CompareMode, func: CompareFunc): void;
 }
 
 export class MaterialInstance {
@@ -221,6 +229,7 @@ export class VertexBuffer$Builder {
     public bufferCount(count: number): VertexBuffer$Builder;
     public attribute(attrib: VertexAttribute, bufindex: number, atype: VertexBuffer$AttributeType,
             offset: number, stride: number): VertexBuffer$Builder;
+    public enableBufferObjects(enabled: boolean): VertexBuffer$Builder;
     public normalized(attrib: VertexAttribute): VertexBuffer$Builder;
     public normalizedIf(attrib: VertexAttribute, normalized: boolean): VertexBuffer$Builder;
     public build(engine: Engine): VertexBuffer;
@@ -230,6 +239,12 @@ export class IndexBuffer$Builder {
     public indexCount(count: number): IndexBuffer$Builder;
     public bufferType(type: IndexBuffer$IndexType): IndexBuffer$Builder;
     public build(engine: Engine): IndexBuffer;
+}
+
+export class BufferObject$Builder {
+    public size(byteCount: number): BufferObject$Builder;
+    public bindingType(type: BufferObject$BindingType): BufferObject$Builder;
+    public build(engine: Engine): BufferObject;
 }
 
 export class RenderableManager$Builder {
@@ -360,6 +375,12 @@ export class VertexBuffer {
     public static Builder(): VertexBuffer$Builder;
     public setBufferAt(engine: Engine, bufindex: number, f32array: BufferReference,
             byteOffset?: number): void;
+    public setBufferObjectAt(engine: Engine, bufindex: number, bo: BufferObject): void;
+}
+
+export class BufferObject {
+    public static Builder(): BufferObject$Builder;
+    public setBuffer(engine: Engine, data: BufferReference, byteOffset?: number): void;
 }
 
 export class IndexBuffer {
@@ -397,7 +418,7 @@ export class Camera {
             near: number, far: number, fov: Camera$Fov): void;
     public setLensProjection(focalLength: number, aspect: number, near: number, far: number): void;
     public setCustomProjection(projection: mat4, near: number, far: number): void;
-    public setScaling(scale: double4): void;
+    public setScaling(scale: double2): void;
     public getProjectionMatrix(): mat4;
     public getCullingProjectionMatrix(): mat4;
     public getScaling(): double4;
@@ -417,7 +438,12 @@ export class Camera {
     public getAperture(): number;
     public getShutterSpeed(): number;
     public getSensitivity(): number;
+    public getFocalLength(): number;
+    public getFocusDistance(): number;
+    public setFocusDistance(distance: number): void;
     public static inverseProjection(p: mat4): mat4;
+    public static computeEffectiveFocalLength(focalLength: number, focusDistance: number) : number;
+    public static computeEffectiveFov(fovInDegrees: number, focusDistance: number) : number;
 }
 
 export class ColorGrading$Builder {
@@ -568,6 +594,7 @@ export class gltfio$AssetLoader {
     public createInstancedAsset(urlOrBuffer: BufferReference,
             instances: (gltfio$FilamentInstance | null)[]): gltfio$FilamentAsset;
     public destroyAsset(asset: gltfio$FilamentAsset): void;
+    public createInstance(asset: gltfio$FilamentAsset): (gltfio$FilamentInstance | null);
     public delete(): void;
 }
 
@@ -586,6 +613,7 @@ export class gltfio$FilamentAsset {
     public getResourceUris(): Vector<string>;
     public getBoundingBox(): Aabb;
     public getName(entity: Entity): string;
+    public getExtras(entity: Entity): string;
     public getAnimator(): gltfio$Animator;
     public getWireframe(): Entity;
     public getEngine(): Engine;
@@ -593,6 +621,7 @@ export class gltfio$FilamentAsset {
 }
 
 export class gltfio$FilamentInstance {
+    public getAsset(): gltfio$FilamentAsset;
     public getEntities(): Vector<Entity>;
     public getRoot(): Entity;
     public getAnimator(): gltfio$Animator;
@@ -654,7 +683,7 @@ export enum ColorGrading$ToneMapping {
     ACES_LEGACY,
     ACES,
     FILMIC,
-    UCHIMURA,
+    EVILS,
     REINHARD,
     DISPLAY_RANGE,
 }
@@ -709,6 +738,10 @@ export enum IndexBuffer$IndexType {
     UINT,
 }
 
+export enum BufferObject$BindingType {
+    VERTEX,
+}
+
 export enum LightManager$Type {
     SUN,
     DIRECTIONAL,
@@ -729,6 +762,22 @@ export enum MinFilter {
     LINEAR_MIPMAP_NEAREST,
     NEAREST_MIPMAP_LINEAR,
     LINEAR_MIPMAP_LINEAR,
+}
+
+export enum CompareMode {
+    NONE,
+    COMPARE_TO_TEXTURE,
+}
+
+export enum CompareFunc {
+    LESS_EQUAL,
+    GREATER_EQUAL,
+    LESS,
+    GREATER,
+    EQUAL,
+    NOT_EQUAL,
+    ALWAYS,
+    NEVER,
 }
 
 export enum CullingMode {
@@ -895,13 +944,13 @@ export enum Texture$Sampler {
 // It is a "const enum" which means TypeScript will simply create a constant for each member.
 // It does not contain the $ delimiter to avoid interference with the embind class.
 export const enum TextureUsage {
-    DEFAULT,
-    COLOR_ATTACHMENT,
-    DEPTH_ATTACHMENT,
-    STENCIL_ATTACHMENT,
-    UPLOADABLE,
-    SAMPLEABLE,
-    SUBPASS_INPUT,
+    COLOR_ATTACHMENT = 1,
+    DEPTH_ATTACHMENT = 2,
+    STENCIL_ATTACHMENT = 4,
+    UPLOADABLE = 8,
+    SAMPLEABLE = 16,
+    SUBPASS_INPUT = 32,
+    DEFAULT = UPLOADABLE | SAMPLEABLE,
 }
 
 export enum Texture$CubemapFace {
@@ -994,6 +1043,11 @@ export enum View$QualityLevel {
 export enum View$AmbientOcclusion {
     NONE,
     SSAO,
+}
+
+export enum View$DepthOfFieldOptions$Filter {
+    NONE,
+    MEDIAN = 2,
 }
 
 export enum View$BloomOptions$BlendMode {

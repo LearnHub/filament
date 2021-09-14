@@ -19,14 +19,16 @@
 
 #include "upcast.h"
 
+#include "Allocators.h"
 #include "FrameInfo.h"
+#include "FrameSkipper.h"
 #include "RenderPass.h"
 
-#include "details/Allocators.h"
-#include "details/FrameSkipper.h"
 #include "details/SwapChain.h"
 
 #include "private/backend/DriverApiForward.h"
+
+#include <fg2/FrameGraphId.h>
 
 #include <filament/Renderer.h>
 #include <filament/View.h>
@@ -40,6 +42,8 @@
 #include <utils/JobSystem.h>
 #include <utils/Slice.h>
 
+#include <tsl/robin_set.h>
+
 namespace filament {
 
 namespace backend {
@@ -49,6 +53,7 @@ class Driver;
 class View;
 
 class FEngine;
+class FRenderTarget;
 class FView;
 class ShadowMap;
 
@@ -69,24 +74,27 @@ public:
     math::float4 getShaderUserTime() const { return mShaderUserTime; }
 
     // do all the work here!
-    void render(FView const* view);
     void renderJob(ArenaScope& arena, FView& view);
 
-    void copyFrame(FSwapChain* dstSwapChain, Viewport const& dstViewport,
-            Viewport const& srcViewport, CopyFrameFlag flags);
+    bool beginFrame(FSwapChain* swapChain, uint64_t vsyncSteadyClockTimeNano);
 
-    bool beginFrame(FSwapChain* swapChain, uint64_t vsyncSteadyClockTimeNano,
-            backend::FrameFinishedCallback callback, void* user);
-    void endFrame();
-
-    void resetUserTime();
+    void render(FView const* view);
 
     void readPixels(uint32_t xoffset, uint32_t yoffset, uint32_t width, uint32_t height,
             backend::PixelBufferDescriptor&& buffer);
 
+    void copyFrame(FSwapChain* dstSwapChain, Viewport const& dstViewport,
+            Viewport const& srcViewport, CopyFrameFlag flags);
+
+    void endFrame();
+
+    void renderStandaloneView(FView const* view);
+
     void readPixels(FRenderTarget* renderTarget,
             uint32_t xoffset, uint32_t yoffset, uint32_t width, uint32_t height,
             backend::PixelBufferDescriptor&& buffer);
+
+    void resetUserTime();
 
     // Clean-up everything, this is typically called when the client calls Engine::destroyRenderer()
     void terminate(FEngine& engine);
@@ -121,11 +129,15 @@ private:
     friend class Renderer;
     using Command = RenderPass::Command;
 
-    backend::Handle<backend::HwRenderTarget> getRenderTarget(FView& view) const noexcept;
+    void getRenderTarget(FView const& view,
+            backend::TargetBufferFlags& outAttachementMask,
+            backend::Handle<backend::HwRenderTarget>& outTarget) const noexcept;
 
     void readPixels(backend::Handle<backend::HwRenderTarget> renderTargetHandle,
             uint32_t xoffset, uint32_t yoffset, uint32_t width, uint32_t height,
             backend::PixelBufferDescriptor&& buffer);
+
+    void renderInternal(FView const* view);
 
     struct ColorPassConfig {
         Viewport vp;
@@ -143,7 +155,7 @@ private:
             FrameGraphTexture::Descriptor const& colorBufferDesc,
             ColorPassConfig const& config,
             PostProcessManager::ColorGradingConfig colorGradingConfig,
-            RenderPass const& pass, FView const& view) const noexcept;
+            RenderPass::Executor const& passExecutor, FView const& view) const noexcept;
 
     FrameGraphId<FrameGraphTexture> refractionPass(FrameGraph& fg,
             ColorPassConfig config,
@@ -160,6 +172,8 @@ private:
 
     backend::TextureFormat getHdrFormat(const View& view, bool translucent) const noexcept;
     backend::TextureFormat getLdrFormat(bool translucent) const noexcept;
+
+    void initializeClearFlags();
 
     using clock = std::chrono::steady_clock;
     using Epoch = clock::time_point;
@@ -187,8 +201,9 @@ private:
     DisplayInfo mDisplayInfo;
     FrameRateOptions mFrameRateOptions;
     ClearOptions mClearOptions;
-    backend::TargetBufferFlags mDiscardedFlags{};
+    backend::TargetBufferFlags mDiscardStartFlags{};
     backend::TargetBufferFlags mClearFlags{};
+    tsl::robin_set<FRenderTarget*> mPreviousRenderTargets;
     std::function<void()> mBeginFrameInternal;
 
     // per-frame arena for this Renderer

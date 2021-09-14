@@ -14,9 +14,12 @@
  * limitations under the License.
  */
 
-#include <utils/Log.h>
-#include "details/FrameSkipper.h"
+#include "FrameSkipper.h"
+
 #include "details/Engine.h"
+
+#include <utils/Log.h>
+#include <utils/debug.h>
 
 namespace filament {
 
@@ -25,7 +28,7 @@ using namespace backend;
 
 FrameSkipper::FrameSkipper(FEngine& engine, size_t latency) noexcept
         : mEngine(engine), mLast(latency) {
-    assert(latency <= MAX_FRAME_LATENCY);
+    assert_invariant(latency <= MAX_FRAME_LATENCY);
 }
 
 FrameSkipper::~FrameSkipper() noexcept {

@@ -42,13 +42,12 @@ SamplerInterfaceBlock const& SibGenerator::getPerViewSib(uint8_t variantKey) noe
         }
 
         return builder
-            .add("records",       Type::SAMPLER_2D,         Format::UINT,    Precision::MEDIUM)
             .add("froxels",       Type::SAMPLER_2D,         Format::UINT,    Precision::MEDIUM)
             .add("iblDFG",        Type::SAMPLER_2D,         Format::FLOAT,   Precision::MEDIUM)
             .add("iblSpecular",   Type::SAMPLER_CUBEMAP,    Format::FLOAT,   Precision::MEDIUM)
-            .add("ssao",          Type::SAMPLER_2D,         Format::FLOAT,   Precision::MEDIUM)
+            .add("ssao",          Type::SAMPLER_2D_ARRAY,   Format::FLOAT,   Precision::MEDIUM)
             .add("ssr",           Type::SAMPLER_2D,         Format::FLOAT,   Precision::MEDIUM)
-            .add("structure",     Type::SAMPLER_2D,         Format::FLOAT,   Precision::MEDIUM)
+            .add("structure",     Type::SAMPLER_2D,         Format::FLOAT,   Precision::HIGH)
             .build();
     };
 

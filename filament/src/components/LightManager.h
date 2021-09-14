@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef TNT_FILAMENT_DETAILS_LIGHTMANAGER_H
-#define TNT_FILAMENT_DETAILS_LIGHTMANAGER_H
+#ifndef TNT_FILAMENT_COMPONENTS_LIGHTMANAGER_H
+#define TNT_FILAMENT_COMPONENTS_LIGHTMANAGER_H
 
 #include "upcast.h"
 
@@ -96,6 +96,7 @@ public:
 
     UTILS_NOINLINE void setLocalPosition(Instance i, const math::float3& position) noexcept;
     UTILS_NOINLINE void setLocalDirection(Instance i, math::float3 direction) noexcept;
+    UTILS_NOINLINE void setLightChannel(Instance i, unsigned int channel, bool enable) noexcept;
     UTILS_NOINLINE void setColor(Instance i, const LinearColor& color) noexcept;
     UTILS_NOINLINE void setSpotLightCone(Instance i, float inner, float outer) noexcept;
     UTILS_NOINLINE void setIntensity(Instance i, float intensity, IntensityUnit unit) noexcept;
@@ -104,6 +105,8 @@ public:
     UTILS_NOINLINE void setSunAngularRadius(Instance i, float angularRadius) noexcept;
     UTILS_NOINLINE void setSunHaloSize(Instance i, float haloSize) noexcept;
     UTILS_NOINLINE void setSunHaloFalloff(Instance i, float haloFalloff) noexcept;
+
+    UTILS_NOINLINE bool getLightChannel(Instance i, unsigned int channel) const noexcept;
 
     LightType const& getLightType(Instance i) const noexcept {
         return mManager[i].lightType;
@@ -187,9 +190,15 @@ public:
         return mManager[i].squaredFallOffInv;
     }
 
+    float getFalloff(Instance i) const noexcept {
+        return getRadius(i);
+    }
+
     SpotParams const& getSpotParams(Instance i) const noexcept {
         return mManager[i].spotParams;
     }
+
+    float getSpotLightInnerCone(Instance i) const noexcept;
 
     float getCosOuterSquared(Instance i) const noexcept {
         return getSpotParams(i).cosOuterSquared;
@@ -201,6 +210,10 @@ public:
 
     float getRadius(Instance i) const noexcept {
         return getSpotParams(i).radius;
+    }
+
+    uint8_t getLightChannels(Instance i) const noexcept {
+        return mManager[i].channels;
     }
 
     const math::float3& getLocalPosition(Instance i) const noexcept {
@@ -215,9 +228,7 @@ public:
         return getShadowParams(i).options;
     }
 
-    void setShadowOptions(Instance i, ShadowOptions const& options) noexcept {
-        static_cast<ShadowParams&>(mManager[i].shadowParams).options = options;
-    }
+    void setShadowOptions(Instance i, ShadowOptions const& options) noexcept;
 
 private:
     friend class FScene;
@@ -234,6 +245,7 @@ private:
         SUN_HALO_FALLOFF,   // state for the directional light sun
         INTENSITY,
         FALLOFF,
+        CHANNELS,
     };
 
     using Base = utils::SingleInstanceComponentManager<  // 120 bytes
@@ -247,7 +259,8 @@ private:
             float,          //  4
             float,          //  4
             float,          //  4
-            float           //  4
+            float,          //  4
+            uint8_t         //  1
     >;
 
     struct Sim : public Base {
@@ -273,6 +286,7 @@ private:
                 Field<SUN_HALO_FALLOFF>     sunHaloFalloff;
                 Field<INTENSITY>            intensity;
                 Field<FALLOFF>              squaredFallOffInv;
+                Field<CHANNELS>             channels;
             };
         };
 
@@ -293,4 +307,4 @@ FILAMENT_UPCAST(LightManager)
 
 } // namespace filament
 
-#endif // TNT_FILAMENT_DETAILS_LIGHTMANAGER_H
+#endif // TNT_FILAMENT_COMPONENTS_LIGHTMANAGER_H

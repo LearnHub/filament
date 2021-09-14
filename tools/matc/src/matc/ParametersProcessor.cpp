@@ -149,8 +149,8 @@ static bool processParameter(MaterialBuilder& builder, const JsonishObject& json
         }
 
         auto precisionString = precisionValue->toJsonString();
-        if (!Enums::isValid<SamplerPrecision>(precisionString->getString())){
-            return logEnumIssue("parameters", *precisionString, Enums::map<SamplerPrecision>());
+        if (!Enums::isValid<ParameterPrecision>(precisionString->getString())){
+            return logEnumIssue("parameters", *precisionString, Enums::map<ParameterPrecision>());
         }
     }
 
@@ -174,10 +174,15 @@ static bool processParameter(MaterialBuilder& builder, const JsonishObject& json
 
     if (Enums::isValid<UniformType>(typeString)) {
         MaterialBuilder::UniformType type = Enums::toEnum<UniformType>(typeString);
+        ParameterPrecision precision = ParameterPrecision::DEFAULT;
+        if (precisionValue) {
+            precision =
+                    Enums::toEnum<ParameterPrecision>(precisionValue->toJsonString()->getString());
+        }
         if (arraySize == 0) {
-            builder.parameter(type, nameString.c_str());
+            builder.parameter(type, precision, nameString.c_str());
         } else {
-            builder.parameter(type, arraySize, nameString.c_str());
+            builder.parameter(type, arraySize, precision, nameString.c_str());
         }
     } else if (Enums::isValid<SamplerType>(typeString)) {
         if (arraySize > 0) {
@@ -191,14 +196,38 @@ static bool processParameter(MaterialBuilder& builder, const JsonishObject& json
         if (precisionValue && formatValue) {
             auto format = Enums::toEnum<SamplerFormat>(formatValue->toJsonString()->getString());
             auto precision =
-                    Enums::toEnum<SamplerPrecision>(precisionValue->toJsonString()->getString());
+                    Enums::toEnum<ParameterPrecision>(precisionValue->toJsonString()->getString());
             builder.parameter(type, format, precision, nameString.c_str());
         } else if (formatValue) {
             auto format = Enums::toEnum<SamplerFormat>(formatValue->toJsonString()->getString());
             builder.parameter(type, format, nameString.c_str());
         } else if (precisionValue) {
             auto precision =
-                    Enums::toEnum<SamplerPrecision>(precisionValue->toJsonString()->getString());
+                    Enums::toEnum<ParameterPrecision>(precisionValue->toJsonString()->getString());
+            builder.parameter(type, precision, nameString.c_str());
+        } else {
+            builder.parameter(type, nameString.c_str());
+        }
+    } else if (Enums::isValid<SubpassType>(typeString)) {
+        if (arraySize > 0) {
+            std::cerr << "parameters: the parameter with name '" << nameString << "'"
+                    << " is an array of subpasses of size " << arraySize << ". Arrays of subpasses"
+                    << " are currently not supported." << std::endl;
+            return false;
+        }
+
+        MaterialBuilder::SubpassType type = Enums::toEnum<SubpassType>(typeString);
+        if (precisionValue && formatValue) {
+            auto format = Enums::toEnum<SamplerFormat>(formatValue->toJsonString()->getString());
+            auto precision =
+                    Enums::toEnum<ParameterPrecision>(precisionValue->toJsonString()->getString());
+            builder.parameter(type, format, precision, nameString.c_str());
+        } else if (formatValue) {
+            auto format = Enums::toEnum<SamplerFormat>(formatValue->toJsonString()->getString());
+            builder.parameter(type, format, nameString.c_str());
+        } else if (precisionValue) {
+            auto precision =
+                    Enums::toEnum<ParameterPrecision>(precisionValue->toJsonString()->getString());
             builder.parameter(type, precision, nameString.c_str());
         } else {
             builder.parameter(type, nameString.c_str());
@@ -219,7 +248,7 @@ static bool processParameters(MaterialBuilder& builder, const JsonishValue& v) {
     bool ok = true;
     for (auto value : jsonArray->getElements()) {
         if (value->getType() == JsonishValue::Type::OBJECT) {
-            ok |= processParameter(builder, *value->toJsonObject());
+            ok &= processParameter(builder, *value->toJsonObject());
             continue;
         }
         std::cerr << "parameters must be an array of OBJECTs." << std::endl;
@@ -353,6 +382,22 @@ static bool processCulling(MaterialBuilder& builder, const JsonishValue& value) 
     return true;
 }
 
+static bool processQuality(MaterialBuilder& builder, const JsonishValue& value) {
+    static const std::unordered_map<std::string, MaterialBuilder::ShaderQuality> strToEnum {
+        { "low", MaterialBuilder::ShaderQuality::LOW },
+        { "normal", MaterialBuilder::ShaderQuality::NORMAL },
+        { "high", MaterialBuilder::ShaderQuality::HIGH },
+        { "default", MaterialBuilder::ShaderQuality::DEFAULT },
+    };
+    auto jsonString = value.toJsonString();
+    if (!isStringValidEnum(strToEnum, jsonString->getString())) {
+        return logEnumIssue("quality", *jsonString, strToEnum);
+    }
+
+    builder.quality(stringToEnum(strToEnum, jsonString->getString()));
+    return true;
+}
+
 static bool processOutput(MaterialBuilder& builder, const JsonishObject& jsonObject) noexcept {
 
     const JsonishValue* nameValue = jsonObject.getValue("name");
@@ -404,6 +449,14 @@ static bool processOutput(MaterialBuilder& builder, const JsonishObject& jsonObj
         }
     }
 
+    const JsonishValue* locationValue = jsonObject.getValue("location");
+    if (locationValue) {
+        if (locationValue->getType() != JsonishValue::NUMBER) {
+            std::cerr << "outputs: location must be a NUMBER." << std::endl;
+            return false;
+        }
+    }
+
     const char* name = nameValue->toJsonString()->getString().c_str();
 
     OutputTarget target = OutputTarget::COLOR;
@@ -425,7 +478,12 @@ static bool processOutput(MaterialBuilder& builder, const JsonishObject& jsonObj
         qualifier = Enums::toEnum<OutputQualifier>(qualifierValue->toJsonString()->getString());
     }
 
-    builder.output(qualifier, target, type, name);
+    int location = -1;
+    if (locationValue) {
+        location = static_cast<int>(locationValue->toJsonNumber()->getFloat());
+    }
+
+    builder.output(qualifier, target, type, name, location);
 
     return true;
 }
@@ -436,7 +494,7 @@ static bool processOutputs(MaterialBuilder& builder, const JsonishValue& v) {
     bool ok = true;
     for (auto value : jsonArray->getElements()) {
         if (value->getType() == JsonishValue::Type::OBJECT) {
-            ok |= processOutput(builder, *value->toJsonObject());
+            ok &= processOutput(builder, *value->toJsonObject());
             continue;
         }
         std::cerr << "outputs must be an array of OBJECTs." << std::endl;
@@ -490,6 +548,11 @@ static bool processShadowMultiplier(MaterialBuilder& builder, const JsonishValue
     return true;
 }
 
+static bool processTransparentShadow(MaterialBuilder& builder, const JsonishValue& value) {
+    builder.transparentShadow(value.toJsonBool()->getBool());
+    return true;
+}
+
 static bool processSpecularAntiAliasing(MaterialBuilder& builder, const JsonishValue& value) {
     builder.specularAntiAliasing(value.toJsonBool()->getBool());
     return true;
@@ -524,6 +587,11 @@ static bool processFramebufferFetch(MaterialBuilder& builder, const JsonishValue
     if (value.toJsonBool()->getBool()) {
         builder.enableFramebufferFetch();
     }
+    return true;
+}
+
+static bool processCustomSurfaceShading(MaterialBuilder& builder, const JsonishValue& value) {
+    builder.customSurfaceShading(value.toJsonBool()->getBool());
     return true;
 }
 
@@ -615,6 +683,7 @@ static bool processVariantFilter(MaterialBuilder& builder, const JsonishValue& v
         strToEnum["shadowReceiver"] = filament::Variant::SHADOW_RECEIVER;
         strToEnum["skinning"] = filament::Variant::SKINNING_OR_MORPHING;
         strToEnum["vsm"] = filament::Variant::VSM;
+        strToEnum["fog"] = filament::Variant::FOG;
         return strToEnum;
     }();
     uint8_t variantFilter = 0;
@@ -661,6 +730,7 @@ ParametersProcessor::ParametersProcessor() {
     mParameters["transparency"]                  = { &processTransparencyMode, Type::STRING };
     mParameters["maskThreshold"]                 = { &processMaskThreshold, Type::NUMBER };
     mParameters["shadowMultiplier"]              = { &processShadowMultiplier, Type::BOOL };
+    mParameters["transparentShadow"]             = { &processTransparentShadow, Type::BOOL };
     mParameters["shadingModel"]                  = { &processShading, Type::STRING };
     mParameters["variantFilter"]                 = { &processVariantFilter, Type::ARRAY };
     mParameters["specularAntiAliasing"]          = { &processSpecularAntiAliasing, Type::BOOL };
@@ -675,6 +745,8 @@ ParametersProcessor::ParametersProcessor() {
     mParameters["refractionType"]                = { &processRefractionType, Type::STRING };
     mParameters["framebufferFetch"]              = { &processFramebufferFetch, Type::BOOL };
     mParameters["outputs"]                       = { &processOutputs, Type::ARRAY };
+    mParameters["quality"]                       = { &processQuality, Type::STRING };
+    mParameters["customSurfaceShading"]          = { &processCustomSurfaceShading, Type::BOOL };
 }
 
 bool ParametersProcessor::process(MaterialBuilder& builder, const JsonishObject& jsonObject) {

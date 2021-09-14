@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.19)
 project(filament-samples C ASM)
 
 if (FILAMENT_SKIP_SAMPLES)
@@ -24,6 +24,8 @@ set(MATERIAL_SRCS
         materials/aoPreview.mat
         materials/groundShadow.mat
         materials/heightfield.mat
+        materials/image.mat
+        materials/mirror.mat
         materials/sandboxCloth.mat
         materials/sandboxLit.mat
         materials/sandboxLitFade.mat
@@ -35,7 +37,8 @@ set(MATERIAL_SRCS
         materials/sandboxSpecGloss.mat
         materials/sandboxSubsurface.mat
         materials/sandboxUnlit.mat
-        materials/texturedLit.mat)
+        materials/texturedLit.mat
+)
 
 if (CMAKE_CROSSCOMPILING)
     include(${IMPORT_EXECUTABLES})
@@ -116,7 +119,7 @@ function(add_ktxfiles SOURCE TARGET EXTRA_ARGS)
     set(MONKEY_FILES ${MONKEY_FILES} ${target_path} PARENT_SCOPE)
     add_custom_command(
         OUTPUT ${target_path}
-        COMMAND mipgen --quiet --strip-alpha ${EXTRA_ARGS} ${source_path} ${target_path}
+        COMMAND mipgen --quiet ${EXTRA_ARGS} ${source_path} ${target_path}
         MAIN_DEPENDENCY ${source_path}
         DEPENDS mipgen
         COMMENT "Generating mip levels for ${source_path}")
@@ -145,10 +148,12 @@ endfunction()
 
 add_mesh("assets/models/monkey/monkey.obj" "suzanne.filamesh")
 
-add_ktxfiles("assets/models/monkey/albedo.png" "albedo_s3tc.ktx" "--compression=s3tc_rgb_dxt1")
-add_ktxfiles("assets/models/monkey/roughness.png" "roughness.ktx" "--grayscale")
-add_ktxfiles("assets/models/monkey/metallic.png" "metallic.ktx" "--grayscale")
-add_ktxfiles("assets/models/monkey/ao.png" "ao.ktx" "--grayscale")
+# Use a RGBA compression format for Metal and Vulkan support.
+set (COMPRESSION "--compression=s3tc_rgba_dxt5")
+add_ktxfiles("assets/models/monkey/albedo.png" "albedo_s3tc.ktx" "${COMPRESSION}")
+add_ktxfiles("assets/models/monkey/roughness.png" "roughness.ktx" "${COMPRESSION};--grayscale")
+add_ktxfiles("assets/models/monkey/metallic.png" "metallic.ktx" "${COMPRESSION};--grayscale")
+add_ktxfiles("assets/models/monkey/ao.png" "ao.ktx" "${COMPRESSION};--grayscale")
 
 add_pngfile("assets/models/monkey/normal.png" "normal.png")
 
@@ -225,9 +230,12 @@ if (NOT ANDROID)
     add_demo(heightfield)
     add_demo(hellopbr)
     add_demo(hellotriangle)
+    add_demo(image_viewer)
     add_demo(lightbulb)
     add_demo(material_sandbox)
+    add_demo(multiple_windows)
     add_demo(point_sprites)
+    add_demo(rendertarget)
     add_demo(sample_cloth)
     add_demo(sample_full_pbr)
     add_demo(sample_normal_map)
@@ -240,13 +248,21 @@ if (NOT ANDROID)
 
     # Sample app specific
     target_link_libraries(frame_generator PRIVATE imageio)
-    target_link_libraries(gltf_viewer PRIVATE gltf-resources gltfio)
-    target_link_libraries(gltf_instances PRIVATE gltf-resources gltfio)
+    target_link_libraries(gltf_viewer PRIVATE gltf-resources gltfio viewer)
+    target_link_libraries(gltf_instances PRIVATE gltf-resources gltfio viewer)
     target_link_libraries(hellopbr PRIVATE filameshio suzanne-resources)
+    target_link_libraries(image_viewer PRIVATE viewer imageio)
+    target_link_libraries(multiple_windows PRIVATE filameshio suzanne-resources)
+    target_link_libraries(rendertarget PRIVATE filameshio suzanne-resources)
     target_link_libraries(sample_cloth PRIVATE filameshio)
     target_link_libraries(sample_normal_map PRIVATE filameshio)
     target_link_libraries(suzanne PRIVATE filameshio suzanne-resources)
 
+    # ==============================================================================================
+    # Installation
+    # ==============================================================================================
+    install(TARGETS gltf_viewer RUNTIME DESTINATION bin)
+    install(TARGETS material_sandbox RUNTIME DESTINATION bin)
 endif()
 
 # ==================================================================================================

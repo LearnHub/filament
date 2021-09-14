@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef TNT_FILAMENT_DETAILS_DEBUG_H
-#define TNT_FILAMENT_DETAILS_DEBUG_H
+#ifndef TNT_FILAMENT_DETAILS_DEBUGREGISTRY_H
+#define TNT_FILAMENT_DETAILS_DEBUGREGISTRY_H
 
 #include "upcast.h"
 
@@ -34,7 +34,7 @@ class FDebugRegistry : public DebugRegistry {
 public:
     FDebugRegistry() noexcept;
 
-    std::pair<Property const*, size_t> getProperties() const noexcept;
+    PropertyArray getProperties() const noexcept;
 
     bool hasProperty(const char* name) const noexcept;
 
@@ -54,7 +54,7 @@ public:
         if (std::is_same<T, float>::value)          type = FLOAT;
         if (std::is_same<T, math::float2>::value)   type = FLOAT2;
         if (std::is_same<T, math::float3>::value)   type = FLOAT3;
-        if (std::is_same<T, math::float4>::value)   type = FLOAT3;
+        if (std::is_same<T, math::float4>::value)   type = FLOAT4;
         registerProperty(name, p, type);
     }
 
@@ -68,4 +68,4 @@ FILAMENT_UPCAST(DebugRegistry)
 
 } // namespace filament
 
-#endif // TNT_FILAMENT_DETAILS_DEBUG_H
+#endif // TNT_FILAMENT_DETAILS_DEBUGREGISTRY_H

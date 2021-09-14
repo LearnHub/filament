@@ -35,18 +35,19 @@
 
 #define METALVIEW_TAG 255
 
+using namespace bluevk;
+
 namespace filament {
 
 using namespace backend;
 
 Driver* PlatformVkCocoaTouch::createDriver(void* const sharedContext) noexcept {
     ASSERT_PRECONDITION(sharedContext == nullptr, "Vulkan does not support shared contexts.");
-    static const char* requestedExtensions[] = {"VK_KHR_surface", "VK_MVK_ios_surface"};
-    return VulkanDriverFactory::create(this, requestedExtensions,
-            sizeof(requestedExtensions) / sizeof(requestedExtensions[0]));
+    static const char* requestedExtensions[] = {"VK_MVK_ios_surface"};
+    return VulkanDriverFactory::create(this, requestedExtensions, 1);
 }
 
-void* PlatformVkCocoaTouch::createVkSurfaceKHR(void* nativeWindow, void* instance) noexcept {
+void* PlatformVkCocoaTouch::createVkSurfaceKHR(void* nativeWindow, void* instance, uint64_t flags) noexcept {
 #if METAL_AVAILABLE
     CAMetalLayer* metalLayer = (CAMetalLayer*) nativeWindow;
 

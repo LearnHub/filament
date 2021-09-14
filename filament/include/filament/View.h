@@ -21,6 +21,7 @@
 
 #include <filament/Color.h>
 #include <filament/FilamentAPI.h>
+#include <filament/Options.h>
 
 #include <backend/DriverEnums.h>
 
@@ -35,7 +36,6 @@ class ColorGrading;
 class MaterialInstance;
 class RenderTarget;
 class Scene;
-class Texture;
 class Viewport;
 
 /**
@@ -61,206 +61,21 @@ class Viewport;
  */
 class UTILS_PUBLIC View : public FilamentAPI {
 public:
-    enum class QualityLevel : uint8_t {
-        LOW,
-        MEDIUM,
-        HIGH,
-        ULTRA
-    };
+    using QualityLevel = QualityLevel;
+    using BlendMode = BlendMode;
+    using AntiAliasing = AntiAliasing;
+    using Dithering = Dithering;
+    using ShadowType = ShadowType;
 
-    enum class BlendMode : uint8_t {
-        OPAQUE,
-        TRANSLUCENT
-    };
-
-    /**
-     * Dynamic resolution can be used to either reach a desired target frame rate
-     * by lowering the resolution of a View, or to increase the quality when the
-     * rendering is faster than the target frame rate.
-     *
-     * This structure can be used to specify the minimum scale factor used when
-     * lowering the resolution of a View, and the maximum scale factor used when
-     * increasing the resolution for higher quality rendering. The scale factors
-     * can be controlled on each X and Y axis independently. By default, all scale
-     * factors are set to 1.0.
-     *
-     * enabled:   enable or disables dynamic resolution on a View
-     * homogeneousScaling: by default the system scales the major axis first. Set this to true
-     *                     to force homogeneous scaling.
-     * minScale:  the minimum scale in X and Y this View should use
-     * maxScale:  the maximum scale in X and Y this View should use
-     * quality:   upscaling quality.
-     *            LOW: 1 bilinear tap, Medium: 4 bilinear taps, High: 9 bilinear taps (tent)
-     *
-     * \note
-     * Dynamic resolution is only supported on platforms where the time to render
-     * a frame can be measured accurately. Dynamic resolution is currently only
-     * supported on Android.
-     *
-     * @see Renderer::FrameRateOptions
-     *
-     */
-    struct DynamicResolutionOptions {
-        math::float2 minScale = math::float2(0.5f);     //!< minimum scale factors in x and y
-        math::float2 maxScale = math::float2(1.0f);     //!< maximum scale factors in x and y
-        bool enabled = false;                           //!< enable or disable dynamic resolution
-        bool homogeneousScaling = false;                //!< set to true to force homogeneous scaling
-        QualityLevel quality = QualityLevel::LOW;       //!< Upscaling quality
-    };
-
-    /**
-     * Options to control the bloom effect
-     *
-     * enabled:     Enable or disable the bloom post-processing effect. Disabled by default.
-     * levels:      Number of successive blurs to achieve the blur effect, the minimum is 3 and the
-     *              maximum is 12. This value together with resolution influences the spread of the
-     *              blur effect. This value can be silently reduced to accommodate the original
-     *              image size.
-     * resolution:  Resolution of bloom's minor axis. The minimum value is 2^levels and the
-     *              the maximum is lower of the original resolution and 4096. This parameter is
-     *              silently clamped to the minimum and maximum.
-     *              It is highly recommended that this value be smaller than the target resolution
-     *              after dynamic resolution is applied (horizontally and vertically).
-     * strength:    how much of the bloom is added to the original image. Between 0 and 1.
-     * blendMode:   Whether the bloom effect is purely additive (false) or mixed with the original
-     *              image (true).
-     * anamorphism: Bloom's aspect ratio (x/y), for artistic purposes.
-     * threshold:   When enabled, a threshold at 1.0 is applied on the source image, this is
-     *              useful for artistic reasons and is usually needed when a dirt texture is used.
-     * dirt:        A dirt/scratch/smudges texture (that can be RGB), which gets added to the
-     *              bloom effect. Smudges are visible where bloom occurs. Threshold must be
-     *              enabled for the dirt effect to work properly.
-     * dirtStrength: Strength of the dirt texture.
-     */
-    struct BloomOptions {
-        enum class BlendMode : uint8_t {
-            ADD,           //!< Bloom is modulated by the strength parameter and added to the scene
-            INTERPOLATE    //!< Bloom is interpolated with the scene using the strength parameter
-        };
-        Texture* dirt = nullptr;                //!< user provided dirt texture
-        float dirtStrength = 0.2f;              //!< strength of the dirt texture
-        float strength = 0.10f;                 //!< bloom's strength between 0.0 and 1.0
-        uint32_t resolution = 360;              //!< resolution of minor axis (2^levels to 4096)
-        float anamorphism = 1.0f;               //!< bloom x/y aspect-ratio (1/32 to 32)
-        uint8_t levels = 6;                     //!< number of blur levels (3 to 12)
-        BlendMode blendMode = BlendMode::ADD;   //!< how the bloom effect is applied
-        bool threshold = true;                  //!< whether to threshold the source
-        bool enabled = false;                   //!< enable or disable bloom
-        float highlight = 1000.0f;              //!< limit highlights to this value before bloom [10, +inf]
-    };
-
-    /**
-     * Options to control fog in the scene
-     */
-    struct FogOptions {
-        float distance = 0.0f;              //!< distance in world units from the camera where the fog starts ( >= 0.0 )
-        float maximumOpacity = 1.0f;        //!< fog's maximum opacity between 0 and 1
-        float height = 0.0f;                //!< fog's floor in world units
-        float heightFalloff = 1.0f;         //!< how fast fog dissipates with altitude
-        LinearColor color{0.5f};            //!< fog's color (linear), see fogColorFromIbl
-        float density = 0.1f;               //!< fog's density at altitude given by 'height'
-        float inScatteringStart = 0.0f;     //!< distance in world units from the camera where in-scattering starts
-        float inScatteringSize = -1.0f;     //!< size of in-scattering (>0 to activate). Good values are >> 1 (e.g. ~10 - 100).
-        bool fogColorFromIbl = false;       //!< Fog color will be modulated by the IBL color in the view direction.
-        bool enabled = false;               //!< enable or disable fog
-    };
-
-    /**
-     * Options to control Depth of Field (DoF) effect in the scene.
-     *
-     * cocScale can be used to set the depth of field blur independently from the camera
-     * aperture, e.g. for artistic reasons. This can be achieved by setting:
-     *      cocScale = cameraAperture / desiredDoFAperture
-     *
-     * @see Camera
-     */
-    struct DepthOfFieldOptions {
-        float focusDistance = 10.0f;        //!< focus distance in world units
-        float cocScale = 1.0f;              //!< circle of confusion scale factor (amount of blur)
-        float maxApertureDiameter = 0.01f;  //!< maximum aperture diameter in meters (zero to disable rotation)
-        bool enabled = false;               //!< enable or disable depth of field effect
-    };
-
-    /**
-     * Options to control the vignetting effect.
-     */
-    struct VignetteOptions {
-        float midPoint = 0.5f;                      //!< high values restrict the vignette closer to the corners, between 0 and 1
-        float roundness = 0.5f;                     //!< controls the shape of the vignette, from a rounded rectangle (0.0), to an oval (0.5), to a circle (1.0)
-        float feather = 0.5f;                       //!< softening amount of the vignette effect, between 0 and 1
-        LinearColorA color{0.0f, 0.0f, 0.0f, 1.0f}; //!< color of the vignette effect, alpha is currently ignored
-        bool enabled = false;                       //!< enables or disables the vignette effect
-    };
-
-    /**
-     * Structure used to set the precision of the color buffer and related quality settings.
-     *
-     * @see setRenderQuality, getRenderQuality
-     */
-    struct RenderQuality {
-        /**
-         * Sets the quality of the HDR color buffer.
-         *
-         * A quality of HIGH or ULTRA means using an RGB16F or RGBA16F color buffer. This means
-         * colors in the LDR range (0..1) have a 10 bit precision. A quality of LOW or MEDIUM means
-         * using an R11G11B10F opaque color buffer or an RGBA16F transparent color buffer. With
-         * R11G11B10F colors in the LDR range have a precision of either 6 bits (red and green
-         * channels) or 5 bits (blue channel).
-         */
-        QualityLevel hdrColorBuffer = QualityLevel::HIGH;
-    };
-
-    /**
-     * Options for screen space Ambient Occlusion (SSAO)
-     * @see setAmbientOcclusion()
-     */
-    struct AmbientOcclusionOptions {
-        float radius = 0.3f;    //!< Ambient Occlusion radius in meters, between 0 and ~10.
-        float power = 1.0f;     //!< Controls ambient occlusion's contrast. Must be positive.
-        float bias = 0.0005f;   //!< Self-occlusion bias in meters. Use to avoid self-occlusion. Between 0 and a few mm.
-        float resolution = 0.5f;//!< How each dimension of the AO buffer is scaled. Must be either 0.5 or 1.0.
-        float intensity = 1.0f; //!< Strength of the Ambient Occlusion effect.
-        QualityLevel quality = QualityLevel::LOW; //!< affects # of samples used for AO.
-        QualityLevel upsampling = QualityLevel::LOW; //!< affects AO buffer upsampling quality.
-        bool enabled = false;    //!< enables or disables screen-space ambient occlusion
-        float minHorizonAngleRad = 0.0f;  //!< min angle in radian to consider
-    };
-
-    /**
-     * Options for Temporal Anti-aliasing (TAA)
-     * @see setTemporalAntiAliasingOptions()
-     */
-    struct TemporalAntiAliasingOptions {
-        float filterWidth = 1.0f;   //!< reconstruction filter width typically between 0 (sharper, aliased) and 1 (smoother)
-        float feedback = 0.04f;     //!< history feedback, between 0 (maximum temporal AA) and 1 (no temporal AA).
-        bool enabled = false;       //!< enables or disables temporal anti-aliasing
-    };
-
-    /**
-     * List of available post-processing anti-aliasing techniques.
-     * @see setAntiAliasing, getAntiAliasing, setSampleCount
-     */
-    enum class AntiAliasing : uint8_t {
-        NONE = 0,   //!< no anti aliasing performed as part of post-processing
-        FXAA = 1    //!< FXAA is a low-quality but very efficient type of anti-aliasing. (default).
-    };
-
-    /**
-     * List of available post-processing dithering techniques.
-     */
-    enum class Dithering : uint8_t {
-        NONE = 0,       //!< No dithering
-        TEMPORAL = 1    //!< Temporal dithering (default)
-    };
-
-    /**
-     * List of available shadow mapping techniques.
-     * @see setShadowType
-     */
-    enum class ShadowType : uint8_t {
-        PCF,        //!< percentage-closer filtered shadows (default)
-        VSM         //!< variance shadows
-    };
+    using DynamicResolutionOptions = DynamicResolutionOptions;
+    using BloomOptions = BloomOptions;
+    using FogOptions = FogOptions;
+    using DepthOfFieldOptions = DepthOfFieldOptions;
+    using VignetteOptions = VignetteOptions;
+    using RenderQuality = RenderQuality;
+    using AmbientOcclusionOptions = AmbientOcclusionOptions;
+    using TemporalAntiAliasingOptions = TemporalAntiAliasingOptions;
+    using VsmShadowOptions = VsmShadowOptions;
 
     /**
      * Sets the View's name. Only useful for debugging.
@@ -384,11 +199,11 @@ public:
      */
     void setBlendMode(BlendMode blendMode) noexcept;
 
-     /**
-      *
-      * @return blending mode set by setBlendMode
-      * @see setBlendMode
-      */
+    /**
+     *
+     * @return blending mode set by setBlendMode
+     * @see setBlendMode
+     */
     BlendMode getBlendMode() const noexcept;
 
     /**
@@ -427,15 +242,6 @@ public:
      *      RenderableManager::Builder::castShadows(),
      */
     void setShadowingEnabled(bool enabled) noexcept;
-
-    /**
-     * Enables or disables shadow mapping. Enabled by default.
-     * @deprecated use setShadowingEnabled
-     */
-    UTILS_DEPRECATED
-    void setShadowsEnabled(bool enabled) noexcept {
-        setShadowingEnabled(enabled);
-    }
 
     /**
      * @return whether shadowing is enabled
@@ -675,9 +481,37 @@ public:
      *
      * The ShadowType affects all the shadows seen within the View.
      *
+     * ShadowType::VSM imposes a restriction on marking renderables as only shadow receivers (but
+     * not casters). To ensure correct shadowing with VSM, all shadow participant renderables should
+     * be marked as both receivers and casters. Objects that are guaranteed to not cast shadows on
+     * themselves or other objects (such as flat ground planes) can be set to not cast shadows,
+     * which might improve shadow quality.
+     *
      * @warning This API is still experimental and subject to change.
      */
     void setShadowType(ShadowType shadow) noexcept;
+
+    /**
+     * Sets VSM shadowing options that apply across the entire View.
+     *
+     * Additional light-specific VSM options can be set with LightManager::setShadowOptions.
+     *
+     * Only applicable when shadow type is set to ShadowType::VSM.
+     *
+     * @param options Options for shadowing.
+     *
+     * @see setShadowType
+     *
+     * @warning This API is still experimental and subject to change.
+     */
+    void setVsmShadowOptions(VsmShadowOptions const& options) noexcept;
+
+    /**
+     * Returns the VSM shadowing options associated with this View.
+     *
+     * @return value set by setVsmShadowOptions().
+     */
+    VsmShadowOptions getVsmShadowOptions() const noexcept;
 
     /**
      * Enables or disables post processing. Enabled by default.
@@ -737,17 +571,6 @@ public:
     //! debugging: returns a Camera from the point of view of *the* dominant directional light used for shadowing.
     Camera const* getDirectionalLightCamera() const noexcept;
 
-
-    /**
-     * List of available tone-mapping operators
-     *
-     * @deprecated See ColorGrading
-     */
-    enum class UTILS_DEPRECATED ToneMapping : uint8_t {
-        LINEAR = 0,     //!< Linear tone mapping (i.e. no tone mapping)
-        ACES = 1,       //!< ACES tone mapping
-    };
-
     /**
      * List of available ambient occlusion techniques
      * @deprecated use AmbientOcclusionOptions::enabled instead
@@ -756,27 +579,6 @@ public:
         NONE = 0,       //!< No Ambient Occlusion
         SSAO = 1        //!< Basic, sampling SSAO
     };
-
-    /**
-      * Enables or disables tone-mapping in the post-processing stage. Enabled by default.
-      *
-      * @param type Tone-mapping function.
-      *
-      * @deprecated Use setColorGrading instead
-      * @see setColorGrading
-      */
-    UTILS_DEPRECATED
-    void setToneMapping(ToneMapping type) noexcept;
-
-    /**
-     * Returns the tone-mapping function.
-     * @return tone-mapping function.
-     *
-     * @deprecated Use getColorGrading instead
-     * @see getColorGrading
-     */
-    UTILS_DEPRECATED
-    ToneMapping getToneMapping() const noexcept;
 
     /**
      * Activates or deactivates ambient occlusion.

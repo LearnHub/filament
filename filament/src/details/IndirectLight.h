@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef TNT_FILAMENT_DETAILS_INDIRECT_LIGHT_H
-#define TNT_FILAMENT_DETAILS_INDIRECT_LIGHT_H
+#ifndef TNT_FILAMENT_DETAILS_INDIRECTLIGHT_H
+#define TNT_FILAMENT_DETAILS_INDIRECTLIGHT_H
 
 #include "upcast.h"
 
@@ -58,8 +58,8 @@ public:
     static math::float4 getColorEstimate(const math::float3 sh[9], math::float3 direction) noexcept;
 
 private:
-    FTexture const* mReflectionsTexture;
-    FTexture const* mIrradianceTexture;
+    FTexture const* mReflectionsTexture = nullptr;
+    FTexture const* mIrradianceTexture = nullptr;
     std::array<math::float3, 9> mIrradianceCoefs;
     float mIntensity = DEFAULT_INTENSITY;
     math::mat3f mRotation;
@@ -70,4 +70,4 @@ FILAMENT_UPCAST(IndirectLight)
 
 } // namespace filament
 
-#endif // TNT_FILAMENT_DETAILS_INDIRECT_LIGHT_H
+#endif // TNT_FILAMENT_DETAILS_INDIRECTLIGHT_H

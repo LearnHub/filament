@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef TNT_FILAMENT_MATERIAL_PARSER_H
-#define TNT_FILAMENT_MATERIAL_PARSER_H
+#ifndef TNT_FILAMENT_MATERIALPARSER_H
+#define TNT_FILAMENT_MATERIALPARSER_H
 
 #include <filaflat/BlobDictionary.h>
 #include <filaflat/ChunkContainer.h>
@@ -40,6 +40,7 @@ namespace filament {
 
 class UniformInterfaceBlock;
 class SamplerInterfaceBlock;
+struct SubpassInfo;
 
 class MaterialParser {
 public:
@@ -61,6 +62,7 @@ public:
     bool getName(utils::CString*) const noexcept;
     bool getUIB(UniformInterfaceBlock* uib) const noexcept;
     bool getSIB(SamplerInterfaceBlock* sib) const noexcept;
+    bool getSubpasses(SubpassInfo* subpass) const noexcept;
     bool getShaderModels(uint32_t* value) const noexcept;
     bool getMaterialProperties(uint64_t* value) const noexcept;
 
@@ -141,6 +143,10 @@ struct ChunkSamplerInterfaceBlock {
     static bool unflatten(filaflat::Unflattener& unflattener, SamplerInterfaceBlock* sib);
 };
 
+struct ChunkSubpassInterfaceBlock {
+    static bool unflatten(filaflat::Unflattener& unflattener, SubpassInfo* sib);
+};
+
 } // namespace filament
 
-#endif // TNT_FILAMENT_MATERIAL_PARSER_H
+#endif // TNT_FILAMENT_MATERIALPARSER_H

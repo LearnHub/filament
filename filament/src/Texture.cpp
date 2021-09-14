@@ -23,19 +23,22 @@
 
 #include "FilamentAPI-impl.h"
 
+#include <filament/Texture.h>
+
 #include <ibl/Cubemap.h>
 #include <ibl/CubemapIBL.h>
 #include <ibl/CubemapUtils.h>
 #include <ibl/Image.h>
 
+#include <utils/FixedCapacityVector.h>
 #include <utils/Panic.h>
-#include <filament/Texture.h>
 
 using namespace utils;
 
 namespace filament {
 
 using namespace backend;
+using namespace math;
 
 struct Texture::BuilderDetails {
     intptr_t mImportedId = 0;
@@ -97,7 +100,7 @@ Texture::Builder& Texture::Builder::usage(Texture::Usage usage) noexcept {
 }
 
 Texture::Builder& Texture::Builder::import(intptr_t id) noexcept {
-    assert(id); // imported id can't be zero
+    assert_invariant(id); // imported id can't be zero
     mImpl->mImportedId = id;
     return *this;
 }
@@ -387,8 +390,14 @@ void FTexture::setExternalStream(FEngine& engine, FStream* stream) noexcept {
 }
 
 void FTexture::generateMipmaps(FEngine& engine) const noexcept {
+    if (!ASSERT_POSTCONDITION_NON_FATAL(mTarget != SamplerType::SAMPLER_EXTERNAL,
+            "External Textures are not mipmappable.")) {
+        return;
+    }
+
     const bool formatMipmappable = engine.getDriverApi().isTextureFormatMipmappable(mFormat);
-    if (!ASSERT_POSTCONDITION_NON_FATAL(formatMipmappable, "Texture format is not mipmappable.")) {
+    if (!ASSERT_POSTCONDITION_NON_FATAL(formatMipmappable,
+            "Texture format %u is not mipmappable.", (unsigned)mFormat)) {
         return;
     }
 
@@ -401,23 +410,26 @@ void FTexture::generateMipmaps(FEngine& engine) const noexcept {
         return;
     }
 
-    auto generateMipsForLayer = [this, &engine](uint16_t layer) {
+    auto generateMipsForLayer = [this, &engine](TargetBufferInfo proto) {
         FEngine::DriverApi& driver = engine.getDriverApi();
 
         // Wrap miplevel 0 in a render target so that we can use it as a blit source.
         uint8_t level = 0;
         uint32_t srcw = mWidth;
         uint32_t srch = mHeight;
-        backend::Handle<backend::HwRenderTarget> srcrth = driver.createRenderTarget(TargetBufferFlags::COLOR,
-                srcw, srch, mSampleCount, { mHandle, level++, layer }, {}, {});
+        proto.handle = mHandle;
+        proto.level = level++;
+        backend::Handle<backend::HwRenderTarget> srcrth = driver.createRenderTarget(
+                TargetBufferFlags::COLOR, srcw, srch, mSampleCount, proto, {}, {});
 
         // Perform a blit for all miplevels down to 1x1.
         backend::Handle<backend::HwRenderTarget> dstrth;
         do {
             uint32_t dstw = std::max(srcw >> 1u, 1u);
             uint32_t dsth = std::max(srch >> 1u, 1u);
-            dstrth = driver.createRenderTarget(TargetBufferFlags::COLOR, dstw, dsth, mSampleCount,
-                    { mHandle, level++, layer }, {}, {});
+            proto.level = level++;
+            dstrth = driver.createRenderTarget(
+                    TargetBufferFlags::COLOR, dstw, dsth, mSampleCount, proto, {}, {});
             driver.blit(TargetBufferFlags::COLOR,
                     dstrth, { 0, 0, dstw, dsth },
                     srcrth, { 0, 0, srcw, srch },
@@ -430,17 +442,37 @@ void FTexture::generateMipmaps(FEngine& engine) const noexcept {
         driver.destroyRenderTarget(dstrth);
     };
 
-    if (mTarget == Sampler::SAMPLER_2D) {
-        generateMipsForLayer(0);
-    } else if (mTarget == Sampler::SAMPLER_CUBEMAP) {
-        for (uint16_t layer = 0; layer < 6; ++layer) {
-            generateMipsForLayer(layer);
-        }
+    switch (mTarget) {
+        case SamplerType::SAMPLER_2D:
+            generateMipsForLayer(TargetBufferInfo{ 0 });
+            break;
+        case SamplerType::SAMPLER_2D_ARRAY:
+            for (uint16_t layer = 0, c = mDepth; layer < c; ++layer) {
+                generateMipsForLayer(TargetBufferInfo{ layer });
+            }
+            break;
+        case SamplerType::SAMPLER_CUBEMAP:
+            for (uint8_t face = 0; face < 6; ++face) {
+                generateMipsForLayer(TargetBufferInfo{ TextureCubemapFace(face) });
+            }
+            break;
+        case SamplerType::SAMPLER_EXTERNAL:
+            // not mipmapable
+            break;
+        case SamplerType::SAMPLER_3D:
+            // TODO: handle SAMPLER_3D -- this can't be done with a 2D blit, this would require
+            //       a fragment shader
+            slog.w << "Texture::generateMipmap does not support SAMPLER_3D yet on this h/w." << io::endl;
+            break;
     }
 }
 
 bool FTexture::isTextureFormatSupported(FEngine& engine, InternalFormat format) noexcept {
     return engine.getDriverApi().isTextureFormatSupported(format);
+}
+
+bool FTexture::isTextureSwizzleSupported(FEngine& engine) noexcept {
+    return engine.getDriverApi().isTextureSwizzleSupported();
 }
 
 size_t FTexture::computeTextureDataSize(Texture::Format format, Texture::Type type,
@@ -509,7 +541,7 @@ void FTexture::generatePrefilterMipmap(FEngine& engine,
     FEngine::DriverApi& driver = engine.getDriverApi();
 
     auto generateMipmaps = [](JobSystem& js,
-            std::vector<Cubemap>& levels, std::vector<Image>& images) {
+            FixedCapacityVector<Cubemap>& levels, FixedCapacityVector<Image>& images) {
         Image temp;
         const Cubemap& base(levels[0]);
         size_t dim = base.getDimensions();
@@ -555,7 +587,7 @@ void FTexture::generatePrefilterMipmap(FEngine& engine,
             // this cannot happen due to the checks above
             break;
     }
-    assert(bytesPerPixel);
+    assert_invariant(bytesPerPixel);
 
     Image temp;
     Cubemap cml = CubemapUtils::create(temp, size);
@@ -584,8 +616,8 @@ void FTexture::generatePrefilterMipmap(FEngine& engine,
                                               static_cast<char const*>(buffer.buffer)
                                               + faceOffsets[j]) + y * stride;
                 for (size_t x = 0; x < size; x++, out++, src++) {
-                    using fp10 = math::fp<0, 5, 5>;
-                    using fp11 = math::fp<0, 5, 6>;
+                    using fp10 = fp<0, 5, 5>;
+                    using fp11 = fp<0, 5, 6>;
                     fp11 r{ uint16_t( *src         & 0x7FFu) };
                     fp11 g{ uint16_t((*src >> 11u) & 0x7FFu) };
                     fp10 b{ uint16_t((*src >> 22u) & 0x3FFu) };
@@ -600,10 +632,8 @@ void FTexture::generatePrefilterMipmap(FEngine& engine,
      * Create the mipmap chain
      */
 
-    std::vector<Image> images;
-    std::vector<Cubemap> levels;
-    images.reserve(getLevels());
-    levels.reserve(getLevels());
+    auto images = FixedCapacityVector<Image>::with_capacity(getLevels());
+    auto levels = FixedCapacityVector<Cubemap>::with_capacity(getLevels());
 
     images.push_back(std::move(temp));
     levels.push_back(std::move(cml));
@@ -628,7 +658,8 @@ void FTexture::generatePrefilterMipmap(FEngine& engine,
 
         Image image;
         Cubemap dst = CubemapUtils::create(image, dim);
-        CubemapIBL::roughnessFilter(js, dst, levels, linearRoughness, numSamples, mirror, true);
+        CubemapIBL::roughnessFilter(js, dst, { levels.begin(), uint32_t(levels.size()) },
+                linearRoughness, numSamples, mirror, true);
 
         Texture::PixelBufferDescriptor pbd(image.getData(), image.getSize(),
                 Texture::PixelBufferDescriptor::PixelDataFormat::RGB,
@@ -1088,6 +1119,10 @@ void Texture::generateMipmaps(Engine& engine) const noexcept {
 
 bool Texture::isTextureFormatSupported(Engine& engine, InternalFormat format) noexcept {
     return FTexture::isTextureFormatSupported(upcast(engine), format);
+}
+
+bool Texture::isTextureSwizzleSupported(Engine& engine) noexcept {
+    return FTexture::isTextureSwizzleSupported(upcast(engine));
 }
 
 size_t Texture::computeTextureDataSize(Texture::Format format, Texture::Type type, size_t stride,

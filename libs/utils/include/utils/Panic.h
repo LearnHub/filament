@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef UTILS_PANIC_H_
-#define UTILS_PANIC_H_
+#ifndef TNT_UTILS_PANIC_H
+#define TNT_UTILS_PANIC_H
 
 #include <string>
 
@@ -374,7 +374,7 @@ private:
 
 namespace details {
 // these are private, don't use
-void logAndPanic(
+void panicLog(
         char const* function, char const* file, int line, const char* format, ...) noexcept;
 }  // namespace details
 
@@ -457,7 +457,7 @@ class UTILS_PUBLIC ArithmeticPanic : public TPanic<ArithmeticPanic> {
  * @param format printf-style string describing the error in more details
  */
 #define PANIC_LOG(format, ...)                                                                     \
-    ::utils::details::logAndPanic(__PRETTY_FUNCTION__,                                             \
+    ::utils::details::panicLog(__PRETTY_FUNCTION__,                                                \
             PANIC_FILE(__FILE__), __LINE__, format, ##__VA_ARGS__)
 
 /**
@@ -558,4 +558,4 @@ class UTILS_PUBLIC ArithmeticPanic : public TPanic<ArithmeticPanic> {
  */
 #define ASSERT_DESTRUCTOR(cond, format, ...) (!(cond) ? PANIC_LOG(format, ##__VA_ARGS__) : (void)0)
 
-#endif  // UTILS_PANIC_H_
+#endif  // TNT_UTILS_PANIC_H

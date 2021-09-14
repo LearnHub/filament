@@ -61,7 +61,12 @@ constexpr uint8_t BLENDING_SOLID_REFRACTION = 4;
 using namespace filament;
 
 struct ColorGradingOptions {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     int toneMapping = static_cast<int>(ColorGrading::ToneMapping::ACES_LEGACY);
+#pragma clang diagnostic pop
+
+    bool luminanceScaling = false;
     int temperature = 0;
     int tint = 0;
     math::float3 outRed{1.0f, 0.0f, 0.0f};
@@ -88,6 +93,7 @@ struct ColorGradingOptions {
 
     bool operator==(const ColorGradingOptions &rhs) const {
         return toneMapping == rhs.toneMapping &&
+               luminanceScaling == rhs.luminanceScaling &&
                temperature == rhs.temperature &&
                outRed == rhs.outRed &&
                outGreen == rhs.outGreen &&
@@ -129,10 +135,11 @@ struct SandboxParameters {
     float ior = 1.5;
     float emissiveExposureWeight = 1.0f;
     float emissiveEV = 0.0f;
+    float sheenRoughness = 0.0f;
     sRGBColor transmittanceColor =  { 1.0f };
     sRGBColor specularColor = { 0.0f };
     sRGBColor subsurfaceColor = { 0.0f };
-    sRGBColor sheenColor = { 0.83f, 0.0f, 0.0f };
+    sRGBColor sheenColor = { 0.0f, 0.0f, 0.0f };
     sRGBColor emissiveColor = { 0.0f };
     int currentMaterialModel = MATERIAL_MODEL_LIT;
     int currentBlending = BLENDING_OPAQUE;

@@ -73,16 +73,36 @@ Filament.loadClassExtensions = function() {
 
         // Create the WebGL 2.0 context.
         const ctx = canvas.getContext("webgl2", options);
-        Filament.glOptions = options;
-        Filament.glContext = ctx;
 
         // Enable all desired extensions by calling getExtension on each one.
         ctx.getExtension('WEBGL_compressed_texture_s3tc');
+        ctx.getExtension('WEBGL_compressed_texture_s3tc_srgb');
         ctx.getExtension('WEBGL_compressed_texture_astc');
         ctx.getExtension('WEBGL_compressed_texture_etc');
 
+        // These transient globals are used temporarily during Engine construction.
+        window.filament_glOptions = options;
+        window.filament_glContext = ctx;
+
         // Register the GL context with emscripten and create the Engine.
-        return Filament.Engine._create();
+        const engine = Filament.Engine._create();
+
+        // Annotate the engine with the GL context to support multiple canvases.
+        engine.context = window.filament_glContext;
+        engine.handle = window.filament_contextHandle;
+
+        // Ensure that we do not pollute the global namespace.
+        delete window.filament_glOptions;
+        delete window.filament_glContext;
+        delete window.filament_contextHandle;
+
+        return engine;
+    };
+
+    Filament.Engine.prototype.execute = function() {
+        window.filament_contextHandle = this.handle;
+        this._execute();
+        delete window.filament_contextHandle;
     };
 
     /// createMaterial ::method::
@@ -237,10 +257,9 @@ Filament.loadClassExtensions = function() {
 
     /// setDepthOfFieldOptions ::method::
     /// overrides ::argument:: Dictionary with one or more of the following properties: \
-    /// focusDistance, cocScale, maxApertureDiameter, enabled.
+    /// cocScale, maxApertureDiameter, enabled.
     Filament.View.prototype.setDepthOfFieldOptions = function(overrides) {
         const options = {
-            focusDistance: 10.0,
             cocScale: 1.0,
             maxApertureDiameter: 0.01,
             enabled: false
@@ -251,7 +270,7 @@ Filament.loadClassExtensions = function() {
 
     /// setBloomOptions ::method::
     /// overrides ::argument:: Dictionary with one or more of the following properties: \
-    /// dirtStrength, strength, resolution, anomorphism, levels, blendMode, threshold, enabled.
+    /// enabled, strength, resolution, anomorphism, levels, blendMode, threshold, highlight.
     /// NOTE: dirt texture is not yet supported in the JavaScript API.
     Filament.View.prototype.setBloomOptions = function(overrides) {
         const options = {
@@ -263,6 +282,16 @@ Filament.loadClassExtensions = function() {
             blendMode: Filament.View$BloomOptions$BlendMode.ADD,
             threshold: true,
             enabled: false,
+            highlight: 1000.0,
+            lensFlare: false,
+            starburst: true,
+            chromaticAberration: 0.005,
+            ghostCount: 4,
+            ghostSpacing: 0.6,
+            ghostThreshold: 10.0,
+            haloThickness: 0.1,
+            haloRadius: 0.4,
+            haloThreshold: 10.0,
             dirt: null
         };
         Object.assign(options, overrides);
@@ -303,6 +332,18 @@ Filament.loadClassExtensions = function() {
         };
         Object.assign(options, overrides);
         this._setVignetteOptions(options);
+    };
+
+    /// BufferObject ::core class::
+
+    /// setBuffer ::method::
+    /// engine ::argument:: [Engine]
+    /// buffer ::argument:: asset string, or Uint8Array, or [Buffer]
+    /// byteOffset ::argument:: non-negative integer
+    Filament.BufferObject.prototype.setBuffer = function(engine, buffer, byteOffset = 0) {
+        buffer = getBufferDescriptor(buffer);
+        this._setBuffer(engine, buffer, byteOffset);
+        buffer.delete();
     };
 
     /// VertexBuffer ::core class::
@@ -400,18 +441,18 @@ Filament.loadClassExtensions = function() {
         this._positions(this.posPointer, stride);
     };
 
-    Filament.SurfaceOrientation$Builder.prototype.triangles16 = function(buffer, stride = 0) {
+    Filament.SurfaceOrientation$Builder.prototype.triangles16 = function(buffer) {
         buffer = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
         this.t16Pointer = Filament._malloc(buffer.byteLength);
         Filament.HEAPU8.set(buffer, this.t16Pointer);
-        this._triangles16(this.t16Pointer, stride);
+        this._triangles16(this.t16Pointer);
     };
 
-    Filament.SurfaceOrientation$Builder.prototype.triangles32 = function(buffer, stride = 0) {
+    Filament.SurfaceOrientation$Builder.prototype.triangles32 = function(buffer) {
         buffer = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
         this.t32Pointer = Filament._malloc(buffer.byteLength);
         Filament.HEAPU8.set(buffer, this.t32Pointer);
-        this._triangles32(this.t32Pointer, stride);
+        this._triangles32(this.t32Pointer);
     };
 
     Filament.SurfaceOrientation$Builder.prototype.build = function() {

@@ -20,6 +20,7 @@
 #include <filament/Box.h>
 #include <filament/TextureSampler.h>
 
+#include <utils/compiler.h>
 #include <utils/Entity.h>
 
 namespace filament {
@@ -52,7 +53,7 @@ class FilamentInstance;
  *
  * \todo Only the default glTF scene is loaded, other glTF scenes are ignored.
  */
-class FilamentAsset {
+class UTILS_PUBLIC FilamentAsset {
 public:
 
     /**
@@ -189,6 +190,9 @@ public:
     size_t getEntitiesByPrefix(const char* prefix, utils::Entity* entities,
             size_t maxCount) const noexcept;
 
+    /** Gets the glTF extras string for a specific node, or for the asset, if it exists. */
+    const char* getExtras(utils::Entity entity = {}) const noexcept;
+
     /**
      * Lazily creates the animation engine or returns it from the cache.
      *
@@ -215,12 +219,13 @@ public:
      *
      * This should only be called after ResourceLoader::loadResources().
      * If using Animator, this should be called after getAnimator().
+     * If this is an instanced asset, this prevents creation of new instances.
      */
     void releaseSourceData() noexcept;
 
     /**
      * Returns a weak reference to the underlying cgltf hierarchy. This becomes invalid after
-     * calling releaseSourceData();
+     * calling releaseSourceData().
      */
     const void* getSourceAsset() noexcept;
 

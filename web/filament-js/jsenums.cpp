@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <filament/BufferObject.h>
 #include <filament/Camera.h>
 #include <filament/ColorGrading.h>
 #include <filament/Color.h>
@@ -23,6 +24,7 @@
 #include <filament/RenderableManager.h>
 #include <filament/RenderTarget.h>
 #include <filament/Texture.h>
+#include <filament/TextureSampler.h>
 #include <filament/VertexBuffer.h>
 #include <filament/View.h>
 
@@ -68,6 +70,9 @@ enum_<VertexAttribute>("VertexAttribute")
     .value("MORPH_TANGENTS_1", MORPH_TANGENTS_1)
     .value("MORPH_TANGENTS_2", MORPH_TANGENTS_2)
     .value("MORPH_TANGENTS_3", MORPH_TANGENTS_3);
+
+enum_<BufferObject::BindingType>("BufferObject$BindingType")
+    .value("VERTEX", BufferObject::BindingType::VERTEX);
 
 enum_<VertexBuffer::AttributeType>("VertexBuffer$AttributeType")
     .value("BYTE", VertexBuffer::AttributeType::BYTE)
@@ -136,6 +141,10 @@ enum_<View::AntiAliasing>("View$AntiAliasing")
     .value("NONE", View::AntiAliasing::NONE)
     .value("FXAA", View::AntiAliasing::FXAA);
 
+enum_<View::DepthOfFieldOptions::Filter>("View$DepthOfFieldOptions$Filter")
+    .value("NONE", View::DepthOfFieldOptions::Filter::NONE)
+    .value("MEDIAN", View::DepthOfFieldOptions::Filter::MEDIAN);
+
 enum_<Camera::Fov>("Camera$Fov")
     .value("VERTICAL", Camera::Fov::VERTICAL)
     .value("HORIZONTAL", Camera::Fov::HORIZONTAL);
@@ -155,8 +164,6 @@ enum_<ColorGrading::ToneMapping>("ColorGrading$ToneMapping")
     .value("ACES_LEGACY", ColorGrading::ToneMapping::ACES_LEGACY)
     .value("ACES", ColorGrading::ToneMapping::ACES)
     .value("FILMIC", ColorGrading::ToneMapping::FILMIC)
-    .value("UCHIMURA", ColorGrading::ToneMapping::UCHIMURA)
-    .value("REINHARD", ColorGrading::ToneMapping::REINHARD)
     .value("DISPLAY_RANGE", ColorGrading::ToneMapping::DISPLAY_RANGE);
 
 enum_<Frustum::Plane>("Frustum$Plane")
@@ -289,6 +296,10 @@ enum_<Texture::CubemapFace>("Texture$CubemapFace") // aka backend::TextureCubema
     .value("NEGATIVE_Z", Texture::CubemapFace::NEGATIVE_Z);
 
 enum_<RenderTarget::AttachmentPoint>("RenderTarget$AttachmentPoint")
+    .value("COLOR0", RenderTarget::AttachmentPoint::COLOR0)
+    .value("COLOR1", RenderTarget::AttachmentPoint::COLOR1)
+    .value("COLOR2", RenderTarget::AttachmentPoint::COLOR2)
+    .value("COLOR3", RenderTarget::AttachmentPoint::COLOR3)
     .value("COLOR", RenderTarget::AttachmentPoint::COLOR)
     .value("DEPTH", RenderTarget::AttachmentPoint::DEPTH);
 
@@ -373,6 +384,20 @@ enum_<backend::SamplerMinFilter>("MinFilter")
     .value("LINEAR_MIPMAP_NEAREST", backend::SamplerMinFilter::LINEAR_MIPMAP_NEAREST)
     .value("NEAREST_MIPMAP_LINEAR", backend::SamplerMinFilter::NEAREST_MIPMAP_LINEAR)
     .value("LINEAR_MIPMAP_LINEAR", backend::SamplerMinFilter::LINEAR_MIPMAP_LINEAR);
+
+enum_<TextureSampler::CompareMode>("CompareMode")
+    .value("NONE", TextureSampler::CompareMode::NONE)
+    .value("COMPARE_TO_TEXTURE", TextureSampler::CompareMode::COMPARE_TO_TEXTURE);
+
+enum_<TextureSampler::CompareFunc>("CompareFunc")
+    .value("LESS_EQUAL", TextureSampler::CompareFunc::LE)
+    .value("GREATER_EQUAL", TextureSampler::CompareFunc::GE)
+    .value("LESS", TextureSampler::CompareFunc::L)
+    .value("GREATER", TextureSampler::CompareFunc::G)
+    .value("EQUAL", TextureSampler::CompareFunc::E)
+    .value("NOT_EQUAL", TextureSampler::CompareFunc::NE)
+    .value("ALWAYS", TextureSampler::CompareFunc::A)
+    .value("NEVER", TextureSampler::CompareFunc::N);
 
 enum_<backend::SamplerMagFilter>("MagFilter")
     .value("NEAREST", backend::SamplerMagFilter::NEAREST)

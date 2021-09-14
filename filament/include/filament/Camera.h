@@ -24,6 +24,8 @@
 #include <utils/compiler.h>
 
 #include <math/mathfwd.h>
+#include <math/vec2.h>
+#include <math/vec4.h>
 
 namespace utils {
 class Entity;
@@ -39,20 +41,18 @@ namespace filament {
  * Creation and destruction
  * ========================
  *
- * Like all Filament objects, Camera can only be constructed on the heap, however, unlike most
- * Filament objects it doesn't require a builder and can be constructed directly
- * using Engine::createCamera(). At the very least, a projection must be defined
- * using setProjection(). In most case, the camera position also needs to be set.
- *
- * A Camera object is destroyed using Engine::destroy(const Camera*).
+ * In Filament, Camera is a component that must be associated with an entity. To do so,
+ * use Engine::createCamera(Entity). A Camera component is destroyed using
+ * Engine::destroyCameraComponent(Entity).
  *
  * ~~~~~~~~~~~{.cpp}
  *  filament::Engine* engine = filament::Engine::create();
  *
- *  filament::Camera* myCamera = engine->createCamera();
+ *  utils::Entity myCameraEntity = utils::EntityManager::get().create();
+ *  filament::Camera* myCamera = engine->createCamera(myCameraEntity);
  *  myCamera->setProjection(45, 16.0/9.0, 0.1, 1.0);
  *  myCamera->lookAt({0, 1.60, 1}, {0, 0, 0});
- *  engine->destroy(myCamera);
+ *  engine->destroyCameraComponent(myCamera);
  * ~~~~~~~~~~~
  *
  *
@@ -191,20 +191,49 @@ public:
 
     /** Sets the projection matrix from the focal length.
      *
-     * @param focalLength lens's focal length in millimeters. \p focalLength > 0.
+     * @param focalLengthInMillimeters lens's focal length in millimeters. \p focalLength > 0.
      * @param aspect      aspect ratio \f$ \frac{width}{height} \f$. \p aspect > 0.
      * @param near        distance in world units from the camera to the near plane. \p near > 0.
      * @param far         distance in world units from the camera to the far plane. \p far > \p near.
      */
-    void setLensProjection(double focalLength, double aspect, double near, double far) noexcept;
+    void setLensProjection(double focalLengthInMillimeters,
+            double aspect, double near, double far) noexcept;
 
-    /** Sets the projection matrix.
+    /** Sets a custom projection matrix.
      *
-     * @param projection  custom projection matrix.
+     * The projection matrix must be of one of the following form:
+     *       a 0 tx 0              a 0 0 tx
+     *       0 b ty 0              0 b 0 ty
+     *       0 0 tz c              0 0 c tz
+     *       0 0 -1 0              0 0 0 1
+     *
+     * The projection matrix must define an NDC system that must match the OpenGL convention,
+     * that is all 3 axis are mapped to [-1, 1].
+     *
+     * @param projection  custom projection matrix used for rendering and culling
      * @param near        distance in world units from the camera to the near plane. \p near > 0.
      * @param far         distance in world units from the camera to the far plane. \p far > \p near.
      */
     void setCustomProjection(math::mat4 const& projection, double near, double far) noexcept;
+
+    /** Sets the projection matrix.
+     *
+     * The projection matrices must be of one of the following form:
+     *       a 0 tx 0              a 0 0 tx
+     *       0 b ty 0              0 b 0 ty
+     *       0 0 tz c              0 0 c tz
+     *       0 0 -1 0              0 0 0 1
+     *
+     * The projection matrices must define an NDC system that must match the OpenGL convention,
+     * that is all 3 axis are mapped to [-1, 1].
+     *
+     * @param projection  custom projection matrix used for rendering
+     * @param projectionForCulling  custom projection matrix used for culling
+     * @param near        distance in world units from the camera to the near plane. \p near > 0.
+     * @param far         distance in world units from the camera to the far plane. \p far > \p near.
+     */
+    void setCustomProjection(math::mat4 const& projection, math::mat4 const& projectionForCulling,
+            double near, double far) noexcept;
 
     /** Sets an additional matrix that scales the projection matrix.
      *
@@ -215,19 +244,47 @@ public:
      *     const double aspect = width / height;
      *
      *     // with Fov::HORIZONTAL passed to setProjection:
-     *     camera->setScaling(double4 {1.0, aspect, 1.0, 1.0});
+     *     camera->setScaling(double4 {1.0, aspect});
      *
      *     // with Fov::VERTICAL passed to setProjection:
-     *     camera->setScaling(double4 {1.0 / aspect, 1.0, 1.0, 1.0});
+     *     camera->setScaling(double4 {1.0 / aspect, 1.0});
      *
      *
      * By default, this is an identity matrix.
      *
-     * @param scaling     diagonal of the scaling matrix to be applied after the projection matrix.
+     * @param scaling     diagonal of the 2x2 scaling matrix to be applied after the projection matrix.
      *
      * @see setProjection, setLensProjection, setCustomProjection
      */
-    void setScaling(math::double4 const& scaling) noexcept;
+    void setScaling(math::double2 scaling) noexcept;
+
+    /**
+     * Sets an additional matrix that shifts the projection matrix.
+     * By default, this is an identity matrix.
+     *
+     * @param shift     x and y translation added to the projection matrix, specified in NDC
+     *                  coordinates, that is, if the translation must be specified in pixels,
+     *                  shift must be scaled by 1.0 / { viewport.width, viewport.height }.
+     *
+     * @see setProjection, setLensProjection, setCustomProjection
+     */
+    void setShift(math::double2 shift) noexcept;
+
+    /** Returns the scaling amount used to scale the projection matrix.
+     *
+     * @return the diagonal of the scaling matrix applied after the projection matrix.
+     *
+     * @see setScaling
+     */
+    math::double4 getScaling() const noexcept;
+
+    /** Returns the shift amount used to translate the projection matrix.
+     *
+     * @return the 2D translation x and y offsets applied after the projection matrix.
+     *
+     * @see setShift
+     */
+    math::double2 getShift() const noexcept;
 
     /** Returns the projection matrix used for rendering.
      *
@@ -248,15 +305,6 @@ public:
      * @see setProjection, setLensProjection, getProjectionMatrix
      */
     math::mat4 getCullingProjectionMatrix() const noexcept;
-
-
-    /** Returns the scaling amount used to scale the projection matrix.
-     *
-     * @return the diagonal of the scaling matrix applied after the projection matrix.
-     *
-     * @see setScaling
-     */
-    const math::double4& getScaling() const noexcept;
 
 
     //! Returns the frustum's near plane
@@ -281,7 +329,8 @@ public:
      *
      * @warning \p view must be a rigid transform
      */
-    void setModelMatrix(const math::mat4f& view) noexcept;
+    void setModelMatrix(const math::mat4& view) noexcept;
+    void setModelMatrix(const math::mat4f& view) noexcept; //!< \overload
 
     /** Sets the camera's view matrix
      *
@@ -314,10 +363,10 @@ public:
      * @return The camera's pose in world space as a rigid transform. Parent transforms, if any,
      * are taken into account.
      */
-    math::mat4f getModelMatrix() const noexcept;
+    math::mat4 getModelMatrix() const noexcept;
 
     //! Returns the camera's view matrix (inverse of the model matrix)
-    math::mat4f getViewMatrix() const noexcept;
+    math::mat4 getViewMatrix() const noexcept;
 
     //! Returns the camera's position in world space
     math::float3 getPosition() const noexcept;
@@ -334,7 +383,7 @@ public:
     //! Returns the camera's field of view in degrees
     float getFieldOfViewInDegrees(Fov direction) const noexcept;
 
-    //! Returns a Frustum object in world space
+    //! Returns the camera's culling Frustum in world space
     class Frustum getFrustum() const noexcept;
 
     //! Returns the entity representing this camera
@@ -389,6 +438,19 @@ public:
     //! returns this camera's sensitivity in ISO
     float getSensitivity() const noexcept;
 
+    //! returns the focal length in meters [m] for a 35mm camera
+    double getFocalLength() const noexcept;
+
+    /**
+     * Sets the camera focus distance. This is used by the Depth-of-field PostProcessing effect.
+     * @param distance Distance from the camera to the plane of focus in world units.
+     *                 Must be positive and larger than the near clipping plane.
+     */
+    void setFocusDistance(float distance) noexcept;
+
+    //! Returns the focus distance in world units
+    float getFocusDistance() const noexcept;
+
     /**
      * Returns the inverse of a projection matrix.
      *
@@ -429,6 +491,24 @@ public:
      * @see inverseProjection(const math::mat4&)
      */
     static math::mat4f inverseProjection(const math::mat4f& p) noexcept;
+
+    /**
+     * Helper to compute the effective focal length taking into account the focus distance
+     *
+     * @param focalLength       focal length in any unit (e.g. [m] or [mm])
+     * @param focusDistance     focus distance in same unit as focalLength
+     * @return                  the effective focal length in same unit as focalLength
+     */
+    static double computeEffectiveFocalLength(double focalLength, double focusDistance) noexcept;
+
+    /**
+     * Helper to compute the effective field-of-view taking into account the focus distance
+     *
+     * @param fovInDegrees      full field of view in degrees
+     * @param focusDistance     focus distance in meters [m]
+     * @return                  effective full field of view in degrees
+     */
+    static double computeEffectiveFov(double fovInDegrees, double focusDistance) noexcept;
 };
 
 } // namespace filament

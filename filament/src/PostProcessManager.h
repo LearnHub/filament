@@ -14,19 +14,20 @@
  * limitations under the License.
  */
 
-#ifndef TNT_FILAMENT_POSTPROCESS_MANAGER_H
-#define TNT_FILAMENT_POSTPROCESS_MANAGER_H
-
-#include "UniformBuffer.h"
+#ifndef TNT_FILAMENT_POSTPROCESSMANAGER_H
+#define TNT_FILAMENT_POSTPROCESSMANAGER_H
 
 #include "private/backend/DriverApiForward.h"
 
 #include "FrameHistory.h"
 
-#include <fg/FrameGraphHandle.h>
+#include <fg2/FrameGraphId.h>
+#include <fg2/FrameGraphResources.h>
+
+#include <filament/Options.h>
 
 #include <backend/DriverEnums.h>
-#include <filament/View.h>
+#include <backend/PipelineState.h>
 
 #include <utils/CString.h>
 
@@ -36,11 +37,11 @@
 
 namespace filament {
 
-class FrameGraph;
 class FColorGrading;
 class FEngine;
 class FMaterial;
 class FMaterialInstance;
+class FrameGraph;
 class FView;
 class RenderPass;
 struct CameraInfo;
@@ -68,9 +69,8 @@ public:
 
     // SSAO
     FrameGraphId<FrameGraphTexture> screenSpaceAmbientOcclusion(FrameGraph& fg,
-            RenderPass& pass, filament::Viewport const& svp,
-            CameraInfo const& cameraInfo,
-            View::AmbientOcclusionOptions options) noexcept;
+            filament::Viewport const& svp, const CameraInfo& cameraInfo,
+            AmbientOcclusionOptions const& options) noexcept;
 
     // Used in refraction pass
     FrameGraphId<FrameGraphTexture> generateGaussianMipmap(FrameGraph& fg,
@@ -78,23 +78,29 @@ public:
             size_t kernelWidth, float sigmaRatio = 6.0f) noexcept;
 
     // Depth-of-field
-    FrameGraphId<FrameGraphTexture> dof(FrameGraph& fg,
-            FrameGraphId<FrameGraphTexture> input,
-            const View::DepthOfFieldOptions& dofOptions,
-            bool translucent,
-            const CameraInfo& cameraInfo) noexcept;
+    FrameGraphId<FrameGraphTexture> dof(FrameGraph& fg, FrameGraphId<FrameGraphTexture> input,
+            const DepthOfFieldOptions& dofOptions, bool translucent,
+            const CameraInfo& cameraInfo, math::float2 scale) noexcept;
 
-    // Color grading, tone mapping, etc.
+    // Bloom
+    FrameGraphId<FrameGraphTexture> bloom(FrameGraph& fg, FrameGraphId<FrameGraphTexture> input,
+            BloomOptions& inoutBloomOptions, backend::TextureFormat outFormat,
+            math::float2 scale) noexcept;
+
+    // Color grading, tone mapping, dithering and bloom
+    FrameGraphId<FrameGraphTexture> colorGrading(FrameGraph& fg,
+            FrameGraphId<FrameGraphTexture> input,
+            const FColorGrading* colorGrading, ColorGradingConfig const& colorGradingConfig,
+            BloomOptions const& bloomOptions, VignetteOptions const& vignetteOptions,
+            math::float2 scale) noexcept;
+
     void colorGradingPrepareSubpass(backend::DriverApi& driver, const FColorGrading* colorGrading,
-            View::VignetteOptions vignetteOptions, bool fxaa, bool dithering,
+            ColorGradingConfig const& colorGradingConfig,
+            VignetteOptions const& vignetteOptions,
             uint32_t width, uint32_t height) noexcept;
 
-    void colorGradingSubpass(backend::DriverApi& driver, bool translucent) noexcept;
-
-    FrameGraphId<FrameGraphTexture> colorGrading(FrameGraph& fg,
-            FrameGraphId<FrameGraphTexture> input, const FColorGrading* colorGrading,
-            backend::TextureFormat outFormat, bool translucent, bool fxaa, math::float2 scale,
-            View::BloomOptions bloomOptions, View::VignetteOptions vignetteOptions, bool dithering) noexcept;
+    void colorGradingSubpass(backend::DriverApi& driver,
+            ColorGradingConfig const& colorGradingConfig) noexcept;
 
     // Anti-aliasing
     FrameGraphId<FrameGraphTexture> fxaa(FrameGraph& fg,
@@ -102,26 +108,36 @@ public:
             bool translucent) noexcept;
 
     // Temporal Anti-aliasing
-    void prepareTaa(FrameHistory& frameHistory,
-            CameraInfo const& cameraInfo,
-            View::TemporalAntiAliasingOptions const& taaOptions) const noexcept;
+    void prepareTaa(FrameHistory& frameHistory, CameraInfo const& cameraInfo,
+            TemporalAntiAliasingOptions const& taaOptions) const noexcept;
 
     FrameGraphId<FrameGraphTexture> taa(FrameGraph& fg,
             FrameGraphId<FrameGraphTexture> input, FrameHistory& frameHistory,
-            View::TemporalAntiAliasingOptions taaOptions,
+            TemporalAntiAliasingOptions const& taaOptions,
             ColorGradingConfig colorGradingConfig) noexcept;
 
     // Blit/rescaling/resolves
     FrameGraphId<FrameGraphTexture> opaqueBlit(FrameGraph& fg,
-            FrameGraphId<FrameGraphTexture> input, FrameGraphTexture::Descriptor outDesc,
+            FrameGraphId<FrameGraphTexture> input, FrameGraphTexture::Descriptor const& outDesc,
             backend::SamplerMagFilter filter = backend::SamplerMagFilter::LINEAR) noexcept;
 
     FrameGraphId<FrameGraphTexture> blendBlit(
-            FrameGraph& fg, bool translucent, View::QualityLevel quality,
-            FrameGraphId<FrameGraphTexture> input, FrameGraphTexture::Descriptor outDesc) noexcept;
+            FrameGraph& fg, bool translucent, DynamicResolutionOptions dsrOptions,
+            FrameGraphId<FrameGraphTexture> input,
+            FrameGraphTexture::Descriptor const& outDesc) noexcept;
 
     FrameGraphId<FrameGraphTexture> resolve(FrameGraph& fg,
             const char* outputBufferName, FrameGraphId<FrameGraphTexture> input) noexcept;
+
+    // VSM shadow mipmap pass
+    FrameGraphId<FrameGraphTexture> vsmMipmapPass(FrameGraph& fg,
+            FrameGraphId<FrameGraphTexture> input, uint8_t layer, size_t level,
+            math::float4 clearColor, bool finalize) noexcept;
+
+    FrameGraphId<FrameGraphTexture> gaussianBlurPass(FrameGraph& fg,
+            FrameGraphId<FrameGraphTexture> input, uint8_t srcLevel,
+            FrameGraphId<FrameGraphTexture> output, uint8_t dstLevel, uint8_t layer,
+            bool reinhard, size_t kernelWidth, float sigma = 6.0f) noexcept;
 
     backend::Handle<backend::HwTexture> getOneTexture() const { return mDummyOneTexture; }
     backend::Handle<backend::HwTexture> getZeroTexture() const { return mDummyZeroTexture; }
@@ -135,11 +151,9 @@ private:
     FEngine& mEngine;
     class PostProcessMaterial;
 
-    FrameGraphId<FrameGraphTexture> mipmapPass(FrameGraph& fg,
-            FrameGraphId<FrameGraphTexture> input, size_t level) noexcept;
-
     struct BilateralPassConfig {
         uint8_t kernelSize = 11;
+        bool bentNormals = false;
         float standardDeviation = 1.0f;
         float bilateralThreshold = 0.0625f;
         float scale = 1.0f;
@@ -149,20 +163,15 @@ private:
             FrameGraph& fg, FrameGraphId<FrameGraphTexture> input, math::int2 axis, float zf,
             backend::TextureFormat format, BilateralPassConfig config) noexcept;
 
-    FrameGraphId<FrameGraphTexture> gaussianBlurPass(FrameGraph& fg,
-            FrameGraphId<FrameGraphTexture> input, uint8_t srcLevel,
-            FrameGraphId<FrameGraphTexture> output, uint8_t dstLevel,
-            bool reinhard, size_t kernelWidth, float sigma = 6.0f) noexcept;
-
     FrameGraphId<FrameGraphTexture> bloomPass(FrameGraph& fg,
             FrameGraphId<FrameGraphTexture> input, backend::TextureFormat outFormat,
-            View::BloomOptions& bloomOptions, math::float2 scale) noexcept;
+            BloomOptions& inoutBloomOptions, math::float2 scale) noexcept;
 
-    void commitAndRender(FrameGraphRenderTarget const& out,
+    void commitAndRender(FrameGraphResources::RenderPassInfo const& out,
             PostProcessMaterial const& material, uint8_t variant,
             backend::DriverApi& driver) const noexcept;
 
-    void commitAndRender(FrameGraphRenderTarget const& out,
+    void commitAndRender(FrameGraphResources::RenderPassInfo const& out,
             PostProcessMaterial const& material,
             backend::DriverApi& driver) const noexcept;
 
@@ -211,15 +220,15 @@ private:
     backend::Handle<backend::HwTexture> mDummyOneTexture;
     backend::Handle<backend::HwTexture> mDummyOneTextureArray;
     backend::Handle<backend::HwTexture> mDummyZeroTexture;
-
-    size_t mSeparableGaussianBlurKernelStorageSize = 0;
+    backend::Handle<backend::HwTexture> mStarburstTexture;
 
     std::uniform_real_distribution<float> mUniformDistribution{0.0f, 1.0f};
 
     const math::float2 mHaltonSamples[16];
-};
 
+    bool mWorkaroundSplitEasu : 1;
+};
 
 } // namespace filament
 
-#endif // TNT_FILAMENT_POSTPROCESS_MANAGER_H
+#endif // TNT_FILAMENT_POSTPROCESSMANAGER_H

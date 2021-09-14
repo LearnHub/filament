@@ -25,6 +25,7 @@
 
 #include <utils/Hash.h>
 
+#include <array>
 #include <vector>
 
 #include <stdint.h>
@@ -47,9 +48,10 @@ public:
     virtual void destroyRenderTarget(backend::RenderTargetHandle h) noexcept = 0;
 
     virtual backend::TextureHandle createTexture(const char* name, backend::SamplerType target,
-            uint8_t levels,
-            backend::TextureFormat format, uint8_t samples, uint32_t width, uint32_t height,
-            uint32_t depth, backend::TextureUsage usage) noexcept = 0;
+            uint8_t levels,backend::TextureFormat format, uint8_t samples,
+            uint32_t width, uint32_t height, uint32_t depth,
+            std::array<backend::TextureSwizzle, 4> swizzle,
+            backend::TextureUsage usage) noexcept = 0;
 
     virtual void destroyTexture(backend::TextureHandle h) noexcept = 0;
 
@@ -77,9 +79,10 @@ public:
     void destroyRenderTarget(backend::RenderTargetHandle h) noexcept override;
 
     backend::TextureHandle createTexture(const char* name, backend::SamplerType target,
-            uint8_t levels,
-            backend::TextureFormat format, uint8_t samples, uint32_t width, uint32_t height,
-            uint32_t depth, backend::TextureUsage usage) noexcept override;
+            uint8_t levels, backend::TextureFormat format, uint8_t samples,
+            uint32_t width, uint32_t height, uint32_t depth,
+            std::array<backend::TextureSwizzle, 4> swizzle,
+            backend::TextureUsage usage) noexcept override;
 
     void destroyTexture(backend::TextureHandle h) noexcept override;
 
@@ -100,6 +103,7 @@ private:
         uint32_t height;
         uint32_t depth;
         backend::TextureUsage usage;
+        std::array<backend::TextureSwizzle, 4> swizzle;
 
         size_t getSize() const noexcept;
 
@@ -111,7 +115,8 @@ private:
                    width == other.width &&
                    height == other.height &&
                    depth == other.depth &&
-                   usage == other.usage;
+                   usage == other.usage &&
+                   swizzle == other.swizzle;
         }
 
         friend size_t hash_value(TextureKey const& k) {
@@ -124,6 +129,10 @@ private:
             utils::hash::combine_fast(seed, k.height);
             utils::hash::combine_fast(seed, k.depth);
             utils::hash::combine_fast(seed, k.usage);
+            utils::hash::combine_fast(seed, k.swizzle[0]);
+            utils::hash::combine_fast(seed, k.swizzle[1]);
+            utils::hash::combine_fast(seed, k.swizzle[2]);
+            utils::hash::combine_fast(seed, k.swizzle[3]);
             return seed;
         }
     };
@@ -149,7 +158,7 @@ private:
         }
     };
 
-    inline void dump() const noexcept;
+    inline void dump(bool brief = false) const noexcept;
 
     template<typename Key, typename Value, typename Hasher = Hasher<Key>>
     class AssociativeContainer {
@@ -176,12 +185,16 @@ private:
         void emplace(ARGS&&... args);
     };
 
+    using CacheContainer = AssociativeContainer<TextureKey, TextureCachePayload>;
+
+    CacheContainer::iterator purge(CacheContainer::iterator const& pos);
+
     backend::DriverApi& mBackend;
-    AssociativeContainer<TextureKey, TextureCachePayload> mTextureCache;
+    CacheContainer mTextureCache;
     AssociativeContainer<backend::TextureHandle, TextureKey> mInUseTextures;
     size_t mAge = 0;
     uint32_t mCacheSize = 0;
-    const bool mEnabled = true;
+    static constexpr bool mEnabled = true;
 };
 
 } // namespace filament

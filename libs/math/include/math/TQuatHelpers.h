@@ -14,17 +14,16 @@
  * limitations under the License.
  */
 
-
-#ifndef MATH_TQUATHELPERS_H_
-#define MATH_TQUATHELPERS_H_
-
-#include <math.h>
-#include <stdint.h>
-#include <sys/types.h>
+#ifndef TNT_MATH_TQUATHELPERS_H
+#define TNT_MATH_TQUATHELPERS_H
 
 #include <math/compiler.h>
 #include <math/scalar.h>
 #include <math/vec3.h>
+
+#include <math.h>
+#include <stdint.h>
+#include <sys/types.h>
 
 namespace filament {
 namespace math {
@@ -251,7 +250,7 @@ public:
         static constexpr T value_eps = T(10) * std::numeric_limits<T>::epsilon();
         // Prevent blowing up when slerping between two quaternions that are very near each other.
         if ((T(1) - absd) < value_eps) {
-            return normalize(lerp(p, q, t));
+            return normalize(lerp(d < 0 ? -p : p, q, t));
         }
         const T npq = std::sqrt(dot(p, p) * dot(q, q));  // ||p|| * ||q||
         const T a = std::acos(filament::math::clamp(absd / npq, T(-1), T(1)));
@@ -289,4 +288,4 @@ public:
 }  // namespace math
 }  // namespace filament
 
-#endif  // MATH_TQUATHELPERS_H_
+#endif  // TNT_MATH_TQUATHELPERS_H
