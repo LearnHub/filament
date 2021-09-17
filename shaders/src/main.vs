@@ -12,6 +12,7 @@ void main() {
         toTangentFrame(mesh_tangents, material.worldNormal, vertex_worldTangent.xyz);
 
         #if defined(HAS_SKINNING_OR_MORPHING)
+        //AVN: Tangent for morphs not being supplied properly so ignoring for now. https://github.com/google/filament/issues/1609
         // if ((objectUniforms.flags & FILAMENT_OBJECT_MORPHING_ENABLED_BIT) != 0u) {
         //     vec3 normal0, normal1, normal2, normal3;
         //     toTangentFrame(mesh_custom4, normal0);

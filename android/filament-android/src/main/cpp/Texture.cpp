@@ -100,6 +100,7 @@ Java_com_google_android_filament_Texture_nBuilderLevels(JNIEnv*, jclass,
     builder->levels((uint8_t) levels);
 }
 
+//AVN: Hack to allow existing texture to be used by filament
 extern "C" JNIEXPORT void JNICALL
 Java_com_google_android_filament_Texture_nBuilderImport(JNIEnv*, jclass,
                                                         jlong nativeBuilder, jint id) {

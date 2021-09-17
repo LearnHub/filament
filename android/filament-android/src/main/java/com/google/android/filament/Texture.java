@@ -640,6 +640,7 @@ public class Texture {
             return this;
         }
 
+        //AVN: Hack to allow existing texture to be used by filament
         /**
          * Specifies a texture to use rather than create a new one
          * @param id the native OpenGL texture ID. Must be created in a shared context with Filament
@@ -1190,6 +1191,7 @@ public class Texture {
     private static native void nBuilderHeight(long nativeBuilder, int height);
     private static native void nBuilderDepth(long nativeBuilder, int depth);
     private static native void nBuilderLevels(long nativeBuilder, int levels);
+    //AVN: Hack to allow existing texture to be used by filament
     private static native void nBuilderImport(long nativeBuilder, int id);
     private static native void nBuilderSampler(long nativeBuilder, int sampler);
     private static native void nBuilderFormat(long nativeBuilder, int format);
