@@ -137,7 +137,8 @@ void PerViewUniforms::prepareFog(const CameraInfo& camera, FogOptions const& opt
     s.fogHeight            = options.height;
     s.fogHeightFalloff     = heightFalloff;
     s.fogColor             = options.color;
-    s.fogDensity           = density;
+    // AVN: Pre-square the density to avoid having to do it in the fragment shader
+    s.fogDensity           = density * density;
     s.fogInscatteringStart = options.inScatteringStart;
     s.fogInscatteringSize  = options.inScatteringSize;
     s.fogColorFromIbl      = options.fogColorFromIbl ? 1.0f : 0.0f;
