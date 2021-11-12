@@ -18,6 +18,7 @@
 #define TNT_FILAMENT_BACKEND_PRIVATE_DRIVER_H
 
 #include <backend/BufferDescriptor.h>
+#include <backend/CallbackHandler.h>
 #include <backend/DriverEnums.h>
 #include <backend/Handle.h>
 #include <backend/PipelineState.h>
@@ -63,7 +64,7 @@ public:
     virtual ~Driver() noexcept;
 
     // called from the main thread (NOT the render-thread) at various intervals, this
-    // is where the driver can free resources consumed by previous commands.
+    // is where the driver can execute user callbacks.
     virtual void purge() noexcept = 0;
 
     virtual ShaderModel getShaderModel() const noexcept = 0;

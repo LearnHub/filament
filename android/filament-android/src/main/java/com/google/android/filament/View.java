@@ -75,6 +75,7 @@ public class View {
     private VignetteOptions mVignetteOptions;
     private ColorGrading mColorGrading;
     private TemporalAntiAliasingOptions mTemporalAntiAliasingOptions;
+    private MultiSampleAntiAliasingOptions mMultiSampleAntiAliasingOptions;
     private VsmShadowOptions mVsmShadowOptions;
 
     /**
@@ -290,6 +291,29 @@ public class View {
         */
        public boolean ssctEnabled = false;
     }
+
+    /**
+     * Options for Multi-sample Anti-aliasing (MSAA)
+     * @see View#setMultiSampleAntiAliasingOptions
+     */
+    public static class MultiSampleAntiAliasingOptions {
+        /** enables or disables temporal anti-aliasing */
+        public boolean enabled = false;
+
+        /**
+         * number of samples to use for multi-sampled anti-aliasing.\n
+         *      0: treated as 1
+         *      1: no anti-aliasing
+         *      n: sample count. Effective sample could be different depending on the
+         *         GPU capabilities.
+         */
+        public int sampleCount = 4;
+
+        /**
+         * custom resolve improves quality for HDR scenes, but may impact performance.
+         */
+        public boolean customResolve = false;
+    };
 
     /**
      * Options for Temporal Anti-aliasing (TAA)
@@ -1047,7 +1071,10 @@ public class View {
      * </p>
      *
      * @param count number of samples to use for multi-sampled anti-aliasing.
+     *
+     * @deprecated use setMultiSampleAntiAliasingOptions instead
      */
+    @Deprecated
     public void setSampleCount(int count) {
         nSetSampleCount(getNativeObject(), count);
     }
@@ -1060,7 +1087,10 @@ public class View {
      * </p>
      *
      * @return value set by {@link #setSampleCount}
+     *
+     * @deprecated use getMultiSampleAntiAliasingOptions instead
      */
+    @Deprecated
     public int getSampleCount() {
         return nGetSampleCount(getNativeObject());
     }
@@ -1087,6 +1117,30 @@ public class View {
     @NonNull
     public AntiAliasing getAntiAliasing() {
         return AntiAliasing.values()[nGetAntiAliasing(getNativeObject())];
+    }
+
+    /**
+     * Enables or disable multi-sample anti-aliasing (MSAA). Disabled by default.
+     *
+     * @param options multi-sample anti-aliasing options
+     */
+    public void setMultiSampleAntiAliasingOptions(@NonNull MultiSampleAntiAliasingOptions options) {
+        mMultiSampleAntiAliasingOptions = options;
+        nSetMultiSampleAntiAliasingOptions(getNativeObject(),
+                options.enabled, options.sampleCount, options.customResolve);
+    }
+
+    /**
+     * Returns multi-sample anti-aliasing options.
+     *
+     * @return multi-sample anti-aliasing options
+     */
+    @NonNull
+    public MultiSampleAntiAliasingOptions getMultiSampleAntiAliasingOptions() {
+        if (mMultiSampleAntiAliasingOptions == null) {
+            mMultiSampleAntiAliasingOptions = new MultiSampleAntiAliasingOptions();
+        }
+        return mMultiSampleAntiAliasingOptions;
     }
 
     /**
@@ -1548,6 +1602,71 @@ public class View {
         return mDepthOfFieldOptions;
     }
 
+    /**
+     * A class containing the result of a picking query
+     */
+    public static class PickingQueryResult {
+        /** The entity of the renderable at the picking query location */
+        @Entity public int renderable;
+        /** The value of the depth buffer at the picking query location */
+        public float depth;
+        /** The fragment coordinate in GL convention at the picking query location */
+        @NonNull public float[] fragCoords = new float[3];
+    };
+
+    /**
+     * An interface to implement a custom class to receive results of picking queries.
+     */
+    public interface OnPickCallback {
+        /**
+         * onPick() is called by the specified Handler in {@link View#pick} when the picking query
+         * result is available.
+         * @param result An instance of {@link PickingQueryResult}.
+         */
+        void onPick(@NonNull PickingQueryResult result);
+    }
+
+    /**
+     * Creates a picking query. Multiple queries can be created (e.g.: multi-touch).
+     * Picking queries are all executed when {@link Renderer#render} is called on this View.
+     * The provided callback is guaranteed to be called at some point in the future.
+     *
+     * Typically it takes a couple frames to receive the result of a picking query.
+     *
+     * @param x        Horizontal coordinate to query in the viewport with origin on the left.
+     * @param y        Vertical coordinate to query on the viewport with origin at the bottom.
+     * @param handler  An {@link java.util.concurrent.Executor Executor}.
+     *                 On Android this can also be a {@link android.os.Handler Handler}.
+     * @param callback User callback executed by <code>handler</code> when the picking query
+     *                 result is available.
+     */
+    public void pick(int x, int y,
+            @Nullable Object handler, @Nullable OnPickCallback callback) {
+        InternalOnPickCallback internalCallback = new InternalOnPickCallback(callback);
+        nPick(getNativeObject(), x, y, handler, internalCallback);
+    }
+
+    private static class InternalOnPickCallback implements Runnable {
+        public InternalOnPickCallback(OnPickCallback mUserCallback) {
+            this.mUserCallback = mUserCallback;
+        }
+        @Override
+        public void run() {
+            mPickingQueryResult.renderable = mRenderable;
+            mPickingQueryResult.depth = mDepth;
+            mPickingQueryResult.fragCoords[0] = mFragCoordsX;
+            mPickingQueryResult.fragCoords[1] = mFragCoordsY;
+            mPickingQueryResult.fragCoords[2] = mFragCoordsZ;
+            mUserCallback.onPick(mPickingQueryResult);
+        }
+        private final OnPickCallback mUserCallback;
+        private final PickingQueryResult mPickingQueryResult = new PickingQueryResult();
+        @Entity int mRenderable;
+        float mDepth;
+        float mFragCoordsX;
+        float mFragCoordsY;
+        float mFragCoordsZ;
+    }
 
     public long getNativeObject() {
         if (mNativeObject == 0) {
@@ -1595,7 +1714,9 @@ public class View {
             boolean nativeResolution, int foregroundRingCount, int backgroundRingCount, int fastGatherRingCount, int maxForegroundCOC, int maxBackgroundCOC);
     private static native void nSetVignetteOptions(long nativeView, float midPoint, float roundness, float feather, float r, float g, float b, float a, boolean enabled);
     private static native void nSetTemporalAntiAliasingOptions(long nativeView, float feedback, float filterWidth, boolean enabled);
+    private static native void nSetMultiSampleAntiAliasingOptions(long nativeView, boolean enabled, int sampleCount, boolean customResolve);
     private static native boolean nIsShadowingEnabled(long nativeView);
     private static native void nSetScreenSpaceRefractionEnabled(long nativeView, boolean enabled);
     private static native boolean nIsScreenSpaceRefractionEnabled(long nativeView);
+    private static native void nPick(long nativeView, int x, int y, Object handler, InternalOnPickCallback internalCallback);
 }

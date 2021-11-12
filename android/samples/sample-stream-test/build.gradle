@@ -1,6 +1,8 @@
-apply plugin: 'com.android.application'
-apply plugin: 'kotlin-android'
-apply plugin: FilamentToolsPlugin
+plugins {
+    id 'com.android.application'
+    id 'kotlin-android'
+    id 'filament-tools-plugin'
+}
 
 project.ext.isSample = true
 
@@ -17,7 +19,7 @@ android {
     compileSdkVersion versions.compileSdk
     defaultConfig {
         applicationId "com.google.android.filament.streamtest"
-        minSdkVersion versions.minSdk
+        minSdkVersion 23
         targetSdkVersion versions.targetSdk
     }
 

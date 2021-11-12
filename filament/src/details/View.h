@@ -19,6 +19,8 @@
 
 #include <filament/View.h>
 
+#include <filament/Renderer.h>
+
 #include "upcast.h"
 
 #include "Allocators.h"
@@ -26,6 +28,7 @@
 #include "FrameInfo.h"
 #include "Froxelizer.h"
 #include "PerViewUniforms.h"
+#include "PIDController.h"
 #include "ShadowMap.h"
 #include "ShadowMapManager.h"
 #include "TypedUniformBuffer.h"
@@ -184,6 +187,7 @@ public:
     bool needsShadowMap() const noexcept { return mNeedsShadowMap; }
     bool hasFog() const noexcept { return mFogOptions.enabled && mFogOptions.density > 0.0f; }
     bool hasVsm() const noexcept { return mShadowType == ShadowType::VSM; }
+    bool hasPicking() const noexcept { return mActivePickingQueriesList != nullptr; }
 
     void renderShadowMaps(FrameGraph& fg, FEngine& engine, FEngine::DriverApi& driver,
             RenderPass const& pass) noexcept;
@@ -213,11 +217,13 @@ public:
     }
 
     void setSampleCount(uint8_t count) noexcept {
-        mSampleCount = uint8_t(count < 1u ? 1u : count);
+        count = uint8_t(count < 1u ? 1u : count);
+        mMultiSampleAntiAliasingOptions.sampleCount = count;
+        mMultiSampleAntiAliasingOptions.enabled = count > 1u;
     }
 
     uint8_t getSampleCount() const noexcept {
-        return mSampleCount;
+        return mMultiSampleAntiAliasingOptions.sampleCount;
     }
 
     void setAntiAliasing(AntiAliasing type) noexcept {
@@ -236,6 +242,15 @@ public:
 
     const TemporalAntiAliasingOptions& getTemporalAntiAliasingOptions() const noexcept {
         return mTemporalAntiAliasingOptions;
+    }
+
+    void setMultiSampleAntiAliasingOptions(MultiSampleAntiAliasingOptions options) noexcept {
+        options.sampleCount = uint8_t(options.sampleCount < 1u ? 1u : options.sampleCount);
+        mMultiSampleAntiAliasingOptions = options;
+    }
+
+    const MultiSampleAntiAliasingOptions& getMultiSampleAntiAliasingOptions() const noexcept {
+        return mMultiSampleAntiAliasingOptions;
     }
 
     void setColorGrading(FColorGrading* colorGrading) noexcept {
@@ -258,7 +273,10 @@ public:
         return mHasPostProcessPass;
     }
 
-    math::float2 updateScale(FrameInfo const& info) noexcept;
+    math::float2 updateScale(FEngine& engine,
+            FrameInfo const& info,
+            Renderer::FrameRateOptions const& frameRateOptions,
+            Renderer::DisplayInfo const& displayInfo) noexcept;
 
     void setDynamicResolutionOptions(View::DynamicResolutionOptions const& options) noexcept;
 
@@ -430,7 +448,46 @@ public:
     // (e.g.: after the FrameFraph execution).
     void commitFrameHistory(FEngine& engine) noexcept;
 
+    // create the picking query
+    View::PickingQuery& pick(uint32_t x, uint32_t y, backend::CallbackHandler* handler,
+            View::PickingQueryResultCallback callback) noexcept {
+        FPickingQuery* pQuery = FPickingQuery::get(x, y, handler, callback);
+        pQuery->next = mActivePickingQueriesList;
+        mActivePickingQueriesList = pQuery;
+        return *pQuery;
+    }
+
+    void executePickingQueries(backend::DriverApi& driver,
+            backend::RenderTargetHandle handle, float scale) noexcept;
+
 private:
+
+    struct FPickingQuery : public PickingQuery {
+    private:
+        FPickingQuery(uint32_t x, uint32_t y,
+                backend::CallbackHandler* handler,
+                View::PickingQueryResultCallback callback) noexcept
+                : PickingQuery{}, x(x), y(y), handler(handler), callback(callback) {}
+        ~FPickingQuery() noexcept = default;
+    public:
+        // TODO: use a small pool
+        static FPickingQuery* get(uint32_t x, uint32_t y, backend::CallbackHandler* handler,
+                View::PickingQueryResultCallback callback) noexcept {
+            return new FPickingQuery(x, y, handler, callback);
+        }
+        static void put(FPickingQuery* pQuery) noexcept {
+            delete pQuery;
+        }
+        mutable FPickingQuery* next = nullptr;
+        // picking query parameters
+        uint32_t const x;
+        uint32_t const y;
+        backend::CallbackHandler* const handler;
+        View::PickingQueryResultCallback const callback;
+        // picking query result
+        PickingQueryResult result;
+    };
+
     void prepareVisibleRenderables(utils::JobSystem& js,
             Frustum const& frustum, FScene::RenderableSoa& renderableData) const noexcept;
 
@@ -486,7 +543,6 @@ private:
     FRenderTarget* mRenderTarget = nullptr;
 
     uint8_t mVisibleLayers = 0x1;
-    uint8_t mSampleCount = 1;
     AntiAliasing mAntiAliasing = AntiAliasing::FXAA;
     Dithering mDithering = Dithering::TEMPORAL;
     bool mShadowingEnabled = true;
@@ -500,10 +556,12 @@ private:
     DepthOfFieldOptions mDepthOfFieldOptions;
     VignetteOptions mVignetteOptions;
     TemporalAntiAliasingOptions mTemporalAntiAliasingOptions;
+    MultiSampleAntiAliasingOptions mMultiSampleAntiAliasingOptions;
     BlendMode mBlendMode = BlendMode::OPAQUE;
     const FColorGrading* mColorGrading = nullptr;
     const FColorGrading* mDefaultColorGrading = nullptr;
 
+    PIDController mPidController;
     DynamicResolutionOptions mDynamicResolution;
     math::float2 mScale = 1.0f;
     bool mIsDynamicResolutionSupported = false;
@@ -514,6 +572,8 @@ private:
     mutable TypedUniformBuffer<ShadowUib> mShadowUb;
 
     mutable FrameHistory mFrameHistory{};
+
+    FPickingQuery* mActivePickingQueriesList = nullptr;
 
     utils::CString mName;
 
@@ -528,6 +588,10 @@ private:
     mutable bool mNeedsShadowMap = false;
 
     ShadowMapManager mShadowMapManager;
+
+#ifndef NDEBUG
+    std::array<DebugRegistry::FrameHistory, 5*60> mDebugFrameHistory;
+#endif
 };
 
 FILAMENT_UPCAST(View)

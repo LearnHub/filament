@@ -16,12 +16,12 @@
 
 #include "PlatformEGLAndroid.h"
 
-#include "OpenGLDriver.h"
-#include "OpenGLContext.h"
+#include "opengl/OpenGLDriver.h"
+#include "opengl/OpenGLContext.h"
 
 #include "android/ExternalTextureManagerAndroid.h"
-#include "android/ExternalStreamManagerAndroid.h"
-#include "android/VirtualMachineEnv.h"
+#include "ExternalStreamManagerAndroid.h"
+#include "private/backend/VirtualMachineEnv.h"
 
 #include <android/api-level.h>
 
@@ -73,8 +73,8 @@ using EGLStream = Platform::Stream;
 
 PlatformEGLAndroid::PlatformEGLAndroid() noexcept
         : PlatformEGL(),
-          mExternalStreamManager(ExternalStreamManagerAndroid::get()),
-          mExternalTextureManager(ExternalTextureManagerAndroid::get()) {
+          mExternalStreamManager(ExternalStreamManagerAndroid::create()),
+          mExternalTextureManager(ExternalTextureManagerAndroid::create()) {
 
     char scratch[PROP_VALUE_MAX + 1];
     int length = __system_property_get("ro.build.version.release", scratch);
@@ -87,8 +87,17 @@ PlatformEGLAndroid::PlatformEGLAndroid() noexcept
     }
 }
 
-backend::Driver* PlatformEGLAndroid::createDriver(void* sharedContext) noexcept {
-    backend::Driver* driver = PlatformEGL::createDriver(sharedContext);
+PlatformEGLAndroid::~PlatformEGLAndroid() noexcept = default;
+
+
+void PlatformEGLAndroid::terminate() noexcept {
+    ExternalStreamManagerAndroid::destroy(&mExternalStreamManager);
+    ExternalTextureManagerAndroid::destroy(&mExternalTextureManager);
+    PlatformEGL::terminate();
+}
+
+Driver* PlatformEGLAndroid::createDriver(void* sharedContext) noexcept {
+    Driver* driver = PlatformEGL::createDriver(sharedContext);
     auto extensions = GLUtils::split(eglQueryString(mEGLDisplay, EGL_EXTENSIONS));
 
     eglGetNativeClientBufferANDROID = (PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC) eglGetProcAddress("eglGetNativeClientBufferANDROID");
@@ -146,12 +155,12 @@ void PlatformEGLAndroid::updateTexImage(Stream* stream, int64_t* timestamp) noex
 }
 
 Platform::ExternalTexture* PlatformEGLAndroid::createExternalTextureStorage() noexcept {
-    return mExternalTextureManager.create();
+    return mExternalTextureManager.createExternalTexture();
 }
 
 void PlatformEGLAndroid::reallocateExternalStorage(
         Platform::ExternalTexture* externalTexture,
-        uint32_t w, uint32_t h, backend::TextureFormat format) noexcept {
+        uint32_t w, uint32_t h, TextureFormat format) noexcept {
     if (externalTexture) {
         if ((EGLImageKHR)externalTexture->image != EGL_NO_IMAGE_KHR) {
             eglDestroyImageKHR(mEGLDisplay, (EGLImageKHR)externalTexture->image);
@@ -201,13 +210,9 @@ int PlatformEGLAndroid::getOSVersion() const noexcept {
     return mOSVersion;
 }
 
-backend::AcquiredImage PlatformEGLAndroid::transformAcquiredImage(backend::AcquiredImage source) noexcept {
-    void* const hwbuffer = source.image;
-    const backend::StreamCallback userCallback = source.callback;
-    void* const userData = source.userData;
-
+AcquiredImage PlatformEGLAndroid::transformAcquiredImage(AcquiredImage source) noexcept {
     // Convert the AHardwareBuffer to EGLImage.
-    EGLClientBuffer clientBuffer = eglGetNativeClientBufferANDROID((const AHardwareBuffer*) hwbuffer);
+    EGLClientBuffer clientBuffer = eglGetNativeClientBufferANDROID((const AHardwareBuffer*)source.image);
     if (!clientBuffer) {
         slog.e << "Unable to get EGLClientBuffer from AHardwareBuffer." << io::endl;
         return {};
@@ -222,29 +227,25 @@ backend::AcquiredImage PlatformEGLAndroid::transformAcquiredImage(backend::Acqui
 
     // Destroy the EGLImage before invoking the user's callback.
     struct Closure {
-        void* image;
-        backend::StreamCallback callback;
-        void* userData;
+        Closure(AcquiredImage const& acquiredImage, EGLDisplay display)
+                : acquiredImage(acquiredImage), display(display) {}
+        AcquiredImage acquiredImage;
         EGLDisplay display;
     };
-    Closure* closure = new Closure();
-    closure->callback = userCallback;
-    closure->image = hwbuffer;
-    closure->userData = userData;
-    closure->display = mEGLDisplay;
+    Closure* closure = new Closure(source, mEGLDisplay);
     auto patchedCallback = [](void* image, void* userdata) {
-        Closure* closure = (Closure*) userdata;
+        Closure* closure = (Closure*)userdata;
         if (eglDestroyImageKHR(closure->display, (EGLImageKHR) image) == EGL_FALSE) {
             slog.e << "eglDestroyImageKHR failed." << io::endl;
         }
-        closure->callback(closure->image, closure->userData);
+        closure->acquiredImage.callback(closure->acquiredImage.image, closure->acquiredImage.userData);
         delete closure;
     };
 
-    return {eglImage, patchedCallback, closure};
+    return { eglImage, patchedCallback, closure, source.handler };
 }
 
-// This must called when the library is loaded. We need this to get a reference to the global VM
+// This must be called when the library is loaded. We need this to get a reference to the global VM
 void JNI_OnLoad(JavaVM* vm, void* reserved) {
     ::filament::VirtualMachineEnv::JNI_OnLoad(vm);
 }

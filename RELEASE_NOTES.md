@@ -3,12 +3,54 @@
 This file contains one line summaries of commits that are worthy of mentioning in release notes.
 A new header is inserted each time a *tag* is created.
 
-## v1.12.6 (currently main branch)
+## v1.12.12 (currently main branch)
 
-- engine: Added concept of lod bias to materials. 
+## v1.12.11
+
+## v1.12.10
+
+- engine: rewrite dynamic resolution scaling controller for better accuracy and less jittering.
+- Java: fix missing ASTC texture enum.
+- tools: Fix normal map issues in mipgen.
+- WebGL: expose some `SurfaceOrientation` functions.
+
+## v1.12.9
+
+- engine: New API: `MultiSampleAntiAliasingOptions` and HDR-aware MSAA resolve. When `customResolve`
+  is enabled, improves anti-aliasing quality [**NEW API**].
+- engine: Fixes and improvements for FSR.
+- engine: All APIs that take a callback as argument now also take a `CallbackHandler*`, a new
+  interface that provides more flexibility around callback dispatch [**NEW API**].
+- Android: Fix JNI bindings for `DepthOfFieldOptions`.
+- Android: workarounds for Adreno-specific fraembuffer issue.
+- JavaScript: updates to JS bindings.
+
+## v1.12.8
+
+- engine: Added picking API to `View`  [⚠️ **Materials need to be rebuilt to access this new feature**].
+- engine: A new `Engine::pumpMessageQueues()` method can be used to trigger all pending user
+  callbacks right away [**NEW API**].
+- engine: new inline helpers to more easily use lambdas, functors and method callbacks with
+  `{Pixel}BufferDescriptor`.
+- Vulkan: fix vertical offset for `readPixels`.
+- Vulkan: various internal improvements.
+- Metal: support integer formats with `readPixels`.
+
+## v1.12.7
+
+- engine: Fix, apply emissive after shadowing.
+
+## v1.12.6
+
+- engine: Added concept of lod bias to materials.
   [⚠️ **Materials need to be rebuilt to access this new feature**].
-- gltfio: Improved handling of transparent materials.
 - engine: Fix, BGRA ordering respected for external images with OpenGL on iOS.
+- engine: Use more sensible defaults for spot light inner outer cone angles.
+- engine: Fix potential race condition that caused stalls in `endFrame`.
+- gltfio: Improved handling of transparent materials.
+- Metal: Fix potential crash on earlier versions of iOS (<= 13.0).
+- Android: Fix `filament-utils-android` 'lite' flavor.
+- Java: Fix potential crash with `IBLPrefilter`.
 
 ## v1.12.5
 

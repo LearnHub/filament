@@ -116,6 +116,7 @@ set(PRIVATE_HDRS
         src/Intersections.h
         src/MaterialParser.h
         src/PerViewUniforms.h
+        src/PIDController.h
         src/PostProcessManager.h
         src/RenderPass.h
         src/RenderPrimitive.h
@@ -176,6 +177,7 @@ set(MATERIAL_SRCS
         src/materials/fsr/fsr_rcas.mat
         src/materials/colorGrading/colorGrading.mat
         src/materials/colorGrading/colorGradingAsSubpass.mat
+        src/materials/colorGrading/customResolveAsSubpass.mat
         src/materials/defaultMaterial.mat
         src/materials/dof/dof.mat
         src/materials/dof/dofCoc.mat
@@ -273,6 +275,7 @@ add_custom_command(
         OUTPUT "${MATERIAL_DIR}/colorGrading.filamat"
         DEPENDS ../shaders/src/dithering.fs
         DEPENDS ../shaders/src/vignette.fs
+        DEPENDS src/materials/colorGrading/colorGrading.fs
         APPEND
 )
 
@@ -280,6 +283,7 @@ add_custom_command(
         OUTPUT "${MATERIAL_DIR}/colorGradingAsSubpass.filamat"
         DEPENDS ../shaders/src/dithering.fs
         DEPENDS ../shaders/src/vignette.fs
+        DEPENDS src/materials/colorGrading/colorGrading.fs
         APPEND
 )
 

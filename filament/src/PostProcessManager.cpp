@@ -209,6 +209,7 @@ static const MaterialInfo sMaterialList[] = {
         { "bloomUpsample",              MATERIAL(BLOOMUPSAMPLE) },
         { "colorGrading",               MATERIAL(COLORGRADING) },
         { "colorGradingAsSubpass",      MATERIAL(COLORGRADINGASSUBPASS) },
+        { "customResolveAsSubpass",     MATERIAL(CUSTOMRESOLVEASSUBPASS) },
         { "dof",                        MATERIAL(DOF) },
         { "dofCoc",                     MATERIAL(DOFCOC) },
         { "dofCombine",                 MATERIAL(DOFCOMBINE) },
@@ -313,8 +314,10 @@ void PostProcessManager::commitAndRender(FrameGraphResources::RenderPassInfo con
 // ------------------------------------------------------------------------------------------------
 
 FrameGraphId<FrameGraphTexture> PostProcessManager::structure(FrameGraph& fg,
-        RenderPass const& pass, uint32_t width, uint32_t height, float scale) noexcept {
+        RenderPass const& pass, uint32_t width, uint32_t height,
+        StructurePassConfig const& config) noexcept {
 
+    const float scale = config.scale;
 
     // structure pass -- automatically culled if not used, currently used by:
     //    - ssao
@@ -322,6 +325,7 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::structure(FrameGraph& fg,
     // It consists of a mipmapped depth pass, tuned for SSAO
     struct StructurePassData {
         FrameGraphId<FrameGraphTexture> depth;
+        FrameGraphId<FrameGraphTexture> picking;
     };
 
     // sanitize a bit the user provided scaling factor
@@ -340,11 +344,24 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::structure(FrameGraph& fg,
                         .levels = uint8_t(levelCount),
                         .format = TextureFormat::DEPTH32F });
 
-                data.depth = builder.write(data.depth, FrameGraphTexture::Usage::DEPTH_ATTACHMENT);
+                // workaround: since we have levels, this implies SAMPLEABLE (because of the gl
+                // backend, which implements non-sampleables with renderbuffers, which don't have levels).
+                // (should the gl driver revert to textures, in that case?)
+                data.depth = builder.write(data.depth,
+                        FrameGraphTexture::Usage::DEPTH_ATTACHMENT | FrameGraphTexture::Usage::SAMPLEABLE);
+
+                if (config.picking) {
+                    data.picking = builder.createTexture("Picking Buffer", {
+                            .width = width, .height = height,
+                            .format = TextureFormat::RG32UI });
+
+                    data.picking = builder.write(data.picking,
+                            FrameGraphTexture::Usage::COLOR_ATTACHMENT);
+                }
 
                 builder.declareRenderPass("Structure Target", {
-                        .attachments = { .depth = data.depth },
-                        .clearFlags = TargetBufferFlags::DEPTH
+                        .attachments = { .color = { data.picking }, .depth = data.depth },
+                        .clearFlags = TargetBufferFlags::COLOR0 | TargetBufferFlags::DEPTH
                 });
             },
             [=](FrameGraphResources const& resources,
@@ -393,6 +410,7 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::structure(FrameGraph& fg,
             });
 
     fg.getBlackboard().put("structure", depth);
+    fg.getBlackboard().put("picking", structurePass->picking);
     return depth;
 }
 
@@ -1897,6 +1915,49 @@ void PostProcessManager::colorGradingSubpass(DriverApi& driver,
     driver.draw(material.getPipelineState(variant), fullScreenRenderPrimitive);
 }
 
+
+void PostProcessManager::customResolvePrepareSubpass(DriverApi& driver, CustomResolveOp op) noexcept {
+    auto const& material = getPostProcessMaterial("customResolveAsSubpass");
+    FMaterialInstance* mi = material.getMaterialInstance();
+    mi->setParameter("direction", op == CustomResolveOp::COMPRESS ? 1.0f : -1.0f),
+    mi->commit(driver);
+}
+
+void PostProcessManager::customResolveSubpass(DriverApi& driver) noexcept {
+    FEngine& engine = mEngine;
+    Handle<HwRenderPrimitive> const& fullScreenRenderPrimitive = engine.getFullScreenRenderPrimitive();
+    auto const& material = getPostProcessMaterial("customResolveAsSubpass");
+    // the UBO has been set and committed in colorGradingPrepareSubpass()
+    FMaterialInstance* mi = material.getMaterialInstance();
+    mi->use(driver);
+    driver.nextSubpass();
+    driver.draw(material.getPipelineState(), fullScreenRenderPrimitive);
+}
+
+FrameGraphId<FrameGraphTexture> PostProcessManager::customResolveUncompressPass(FrameGraph& fg,
+        FrameGraphId<FrameGraphTexture> inout) noexcept {
+    struct UncompressData {
+        FrameGraphId<FrameGraphTexture> inout;
+    };
+    auto& detonemapPass = fg.addPass<UncompressData>("Uncompress Pass",
+            [&](FrameGraph::Builder& builder, auto& data) {
+                data.inout = builder.read(inout, FrameGraphTexture::Usage::SUBPASS_INPUT);
+                data.inout = builder.write(data.inout, FrameGraphTexture::Usage::COLOR_ATTACHMENT);
+                builder.declareRenderPass("Uncompress target", {
+                        .attachments = { .color = { data.inout }}
+                });
+            },
+            [=](FrameGraphResources const& resources, auto const& data, DriverApi& driver) {
+                customResolvePrepareSubpass(driver, CustomResolveOp::UNCOMPRESS);
+                auto out = resources.getRenderPassInfo();
+                out.params.subpassMask = 1;
+                driver.beginRenderPass(out.target, out.params);
+                customResolveSubpass(driver);
+                driver.endRenderPass();
+            });
+    return detonemapPass->inout;
+}
+
 FrameGraphId<FrameGraphTexture> PostProcessManager::colorGrading(FrameGraph& fg,
         FrameGraphId<FrameGraphTexture> input,
         FColorGrading const* colorGrading, ColorGradingConfig const& colorGradingConfig,
@@ -2325,7 +2386,7 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::blendBlit(
         FrameGraphId<FrameGraphTexture> depth;
     };
 
-    auto& ppQuadBlit = fg.addPass<QuadBlitData>("quad scaling",
+    auto& ppQuadBlit = fg.addPass<QuadBlitData>(dsrOptions.enabled ? "quad scaling" : "blendBlit",
             [&](FrameGraph::Builder& builder, auto& data) {
                 data.input = builder.sample(input);
                 data.output = builder.createTexture("scaled output", outDesc);
@@ -2607,5 +2668,6 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::vsmMipmapPass(FrameGraph& fg
 
     return depthMipmapPass->in;
 }
+
 
 } // namespace filament

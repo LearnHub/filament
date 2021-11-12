@@ -64,16 +64,19 @@ MetalDriver::MetalDriver(backend::MetalPlatform* platform) noexcept
 
     initializeSupportedGpuFamilies(mContext);
 
-    utils::slog.d << "Supported GPU families: " << utils::io::endl;
+    utils::slog.v << "Supported GPU families: " << utils::io::endl;
     if (mContext->highestSupportedGpuFamily.common > 0) {
-        utils::slog.d << "  MTLGPUFamilyCommon" << (int) mContext->highestSupportedGpuFamily.common << utils::io::endl;
+        utils::slog.v << "  MTLGPUFamilyCommon" << (int) mContext->highestSupportedGpuFamily.common << utils::io::endl;
     }
     if (mContext->highestSupportedGpuFamily.apple > 0) {
-        utils::slog.d << "  MTLGPUFamilyApple" << (int) mContext->highestSupportedGpuFamily.apple << utils::io::endl;
+        utils::slog.v << "  MTLGPUFamilyApple" << (int) mContext->highestSupportedGpuFamily.apple << utils::io::endl;
     }
     if (mContext->highestSupportedGpuFamily.mac > 0) {
-        utils::slog.d << "  MTLGPUFamilyMac" << (int) mContext->highestSupportedGpuFamily.mac << utils::io::endl;
+        utils::slog.v << "  MTLGPUFamilyMac" << (int) mContext->highestSupportedGpuFamily.mac << utils::io::endl;
     }
+    utils::slog.v << "Features:" << utils::io::endl;
+    utils::slog.v << "  readWriteTextureSupport: " <<
+            (bool) mContext->device.readWriteTextureSupport << utils::io::endl;
 
     // In order to support texture swizzling, the GPU needs to support it and the system be running
     // iOS 13+.
@@ -565,8 +568,8 @@ Handle<HwStream> MetalDriver::createStreamAcquired() {
     return {};
 }
 
-void MetalDriver::setAcquiredImage(Handle<HwStream> sh, void* image, backend::StreamCallback cb,
-        void* userData) {
+void MetalDriver::setAcquiredImage(Handle<HwStream> sh, void* image,
+        backend::CallbackHandler* handler, backend::StreamCallback cb, void* userData) {
 }
 
 void MetalDriver::setStreamDimensions(Handle<HwStream> stream, uint32_t width,
@@ -650,11 +653,14 @@ bool MetalDriver::isRenderTargetFormatSupported(TextureFormat format) {
 }
 
 bool MetalDriver::isFrameBufferFetchSupported() {
-#if defined(IOS) && !defined(FILAMENT_IOS_SIMULATOR)
-    return true;
-#else
-    return false;
-#endif
+    // FrameBuffer fetch is achievable via "programmable blending" in Metal, and only supported on
+    // Apple GPUs with readWriteTextureSupport.
+    return mContext->highestSupportedGpuFamily.apple >= 1 &&
+            mContext->device.readWriteTextureSupport;
+}
+
+bool MetalDriver::isFrameBufferFetchMultiSampleSupported() {
+    return isFrameBufferFetchSupported();
 }
 
 bool MetalDriver::isFrameTimeSupported() {
@@ -973,23 +979,19 @@ void MetalDriver::readPixels(Handle<HwRenderTarget> src, uint32_t x, uint32_t y,
     id<MTLTexture> srcTexture = color.getTexture();
     size_t miplevel = color.level;
 
-    auto chooseMetalPixelFormat = [] (PixelDataFormat format, PixelDataType type) {
-        // TODO: Add support for UINT and INT
-        if (format == PixelDataFormat::RGBA && type == PixelDataType::UBYTE) {
-                return MTLPixelFormatRGBA8Unorm;
-        }
-
-        if (format == PixelDataFormat::RGBA && type == PixelDataType::FLOAT) {
-                return MTLPixelFormatRGBA32Float;
-        }
-
-        return MTLPixelFormatInvalid;
-    };
-
-    const MTLPixelFormat format = chooseMetalPixelFormat(data.format, data.type);
+    const MTLPixelFormat format = getMetalFormat(data.format, data.type);
     ASSERT_PRECONDITION(format != MTLPixelFormatInvalid,
-            "The chosen combination of PixelDataFormat and PixelDataType is not supported for "
-            "readPixels.");
+            "The chosen combination of PixelDataFormat (%d) and PixelDataType (%d) is not supported for "
+            "readPixels.", (int) data.format, (int) data.type);
+
+    const bool formatConversionNecessary = srcTexture.pixelFormat != format;
+
+    // TODO: MetalBlitter does not currently support format conversions to integer types.
+    // The format and type must match the source pixel format exactly.
+    ASSERT_PRECONDITION(!formatConversionNecessary || !isMetalFormatInteger(format),
+            "readPixels does not support integer format conversions from MTLPixelFormat (%d) to (%d).",
+            (int) srcTexture.pixelFormat, (int) format);
+
     MTLTextureDescriptor* textureDescriptor =
             [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
                                                                width:(srcTexture.width >> miplevel)

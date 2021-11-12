@@ -49,11 +49,17 @@ struct CameraInfo;
 class PostProcessManager {
 public:
     struct ColorGradingConfig {
-        bool asSubpass = false;
+        bool asSubpass{};
+        bool customResolve{};
         bool translucent{};
         bool fxaa{};
         bool dithering{};
         backend::TextureFormat ldrFormat{};
+    };
+
+    struct StructurePassConfig {
+        float scale = 0.5f;
+        bool picking{};
     };
 
     explicit PostProcessManager(FEngine& engine) noexcept;
@@ -65,7 +71,7 @@ public:
 
     // structure (depth) pass
     FrameGraphId<FrameGraphTexture> structure(FrameGraph& fg, RenderPass const& pass,
-            uint32_t width, uint32_t height, float scale) noexcept;
+            uint32_t width, uint32_t height, StructurePassConfig const& config) noexcept;
 
     // SSAO
     FrameGraphId<FrameGraphTexture> screenSpaceAmbientOcclusion(FrameGraph& fg,
@@ -102,7 +108,14 @@ public:
     void colorGradingSubpass(backend::DriverApi& driver,
             ColorGradingConfig const& colorGradingConfig) noexcept;
 
-    // Anti-aliasing
+    // custom MSAA resolve as subpass
+    enum class CustomResolveOp { COMPRESS, UNCOMPRESS };
+    void customResolvePrepareSubpass(backend::DriverApi& driver, CustomResolveOp op) noexcept;
+    void customResolveSubpass(backend::DriverApi& driver) noexcept;
+    FrameGraphId<FrameGraphTexture> customResolveUncompressPass(FrameGraph& fg,
+            FrameGraphId<FrameGraphTexture> inout) noexcept;
+
+        // Anti-aliasing
     FrameGraphId<FrameGraphTexture> fxaa(FrameGraph& fg,
             FrameGraphId<FrameGraphTexture> input, backend::TextureFormat outFormat,
             bool translucent) noexcept;
