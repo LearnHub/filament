@@ -396,6 +396,13 @@ private:
     // timer query implementation
     TimerQueryInterface* mTimerQueryImpl = nullptr;
     bool mFrameTimeSupported = false;
+
+    std::thread mCallbackThread;
+    std::mutex mCallbackThreadLock;
+    std::condition_variable mCallbackThreadCondition;
+    std::vector<std::tuple<backend::Platform::Fence*, backend::FrameCompletedCallback, void*>> mCallbackFenceQueue;
+    bool mCallbackExitRequested = false;
+
 };
 
 // ------------------------------------------------------------------------------------------------

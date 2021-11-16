@@ -330,7 +330,7 @@ TEST_F(ReadPixelsTest, ReadPixels) {
 
         getDriverApi().flush();
         getDriverApi().commit(swapChain);
-        getDriverApi().endFrame(0);
+        getDriverApi().endFrame(0, nullptr, nullptr);
 
         getDriverApi().destroySwapChain(swapChain);
         getDriverApi().destroyRenderTarget(renderTarget);
@@ -426,7 +426,7 @@ TEST_F(ReadPixelsTest, ReadPixelsPerformance) {
 
         getDriverApi().readPixels(renderTarget, 0, 0, renderTargetSize, renderTargetSize, std::move(descriptor));
         getDriverApi().commit(swapChain);
-        getDriverApi().endFrame(0);
+        getDriverApi().endFrame(0, nullptr, nullptr);
 
         flushAndWait();
         getDriver().purge();

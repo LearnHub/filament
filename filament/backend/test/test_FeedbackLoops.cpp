@@ -243,7 +243,7 @@ TEST_F(BackendTest, FeedbackLoops) {
 
             api.flush();
             api.commit(swapChain);
-            api.endFrame(0);
+            api.endFrame(0, nullptr, nullptr);
             api.finish();
             executeCommands();
             getDriver().purge();

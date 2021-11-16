@@ -383,7 +383,7 @@ void VulkanDriver::setFrameCompletedCallback(Handle<HwSwapChain> sch,
 void VulkanDriver::setPresentationTime(int64_t monotonic_clock_ns) {
 }
 
-void VulkanDriver::endFrame(uint32_t frameId) {
+void VulkanDriver::endFrame(uint32_t frameId, backend::FrameCompletedCallback callback, void* user) {
     if (mContext.commands->flush()) {
         collectGarbage();
     }

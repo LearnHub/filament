@@ -202,10 +202,49 @@ OpenGLDriver::OpenGLDriver(OpenGLPlatform* platform) noexcept
         mTimerQueryImpl = new TimerQueryFallback();
         mFrameTimeSupported = false;
     }
+
+    // frame callback thread
+    mCallbackThread = std::thread([this]() {
+        do {
+            auto& threadCondition = mCallbackThreadCondition;
+            auto& threadCallbackQueue = mCallbackFenceQueue;
+
+            // wait for some callbacks to dispatch
+            std::unique_lock<std::mutex> lock(mCallbackThreadLock);
+            while (threadCallbackQueue.empty() && !mCallbackExitRequested) {
+                threadCondition.wait(lock);
+            }
+            if (mCallbackExitRequested) {
+                break;
+            }
+            // move the callbacks to a temporary vector
+            auto callbacks(std::move(threadCallbackQueue));
+            lock.unlock();
+            // and make sure to call them without our lock held
+            for (auto[fence, callback, user]: callbacks) {
+                this->mPlatform.waitFence(fence, FENCE_WAIT_FOR_EVER);
+                this->mPlatform.destroyFence(fence);
+                callback(user);
+            }
+        } while (!mCallbackExitRequested);
+    });
+#if defined(__linux__)
+        pthread_setname_np(mCallbackThread.native_handle(), "FrameCallback");
+#endif
+
+
 }
 
 OpenGLDriver::~OpenGLDriver() noexcept {
     delete mOpenGLBlitter;
+
+    // quit the frame callback thread
+    std::unique_lock<std::mutex> lock(mCallbackThreadLock);
+    mCallbackExitRequested = true;
+    mCallbackThreadCondition.notify_one();
+    lock.unlock();
+    mCallbackThread.join();
+
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -2953,17 +2992,23 @@ void OpenGLDriver::setFrameScheduledCallback(Handle<HwSwapChain> sch,
 
 void OpenGLDriver::setFrameCompletedCallback(Handle<HwSwapChain> sch,
         backend::FrameCompletedCallback callback, void* user) {
-
 }
 
 void OpenGLDriver::setPresentationTime(int64_t monotonic_clock_ns) {
     mPlatform.setPresentationTime(monotonic_clock_ns);
 }
 
-void OpenGLDriver::endFrame(uint32_t frameId) {
+void OpenGLDriver::endFrame(uint32_t frameId, backend::FrameCompletedCallback callback, void* user) {
     //SYSTRACE_NAME("glFinish");
     //glFinish();
     insertEventMarker("endFrame");
+
+    if(callback) {
+        auto fence = mPlatform.createFence();
+        std::lock_guard<std::mutex> lock(mCallbackThreadLock);
+        mCallbackFenceQueue.emplace_back(fence, callback, user);
+        mCallbackThreadCondition.notify_one();
+    }
 }
 
 void OpenGLDriver::flush(int) {

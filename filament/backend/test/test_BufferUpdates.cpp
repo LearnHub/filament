@@ -134,7 +134,7 @@ TEST_F(BackendTest, VertexBufferUpdate) {
 
         getDriverApi().flush();
         getDriverApi().commit(swapChain);
-        getDriverApi().endFrame(0);
+        getDriverApi().endFrame(0, nullptr, nullptr);
 
         getDriverApi().stopCapture(0);
 
@@ -203,7 +203,7 @@ TEST_F(BackendTest, BufferObjectUpdateWithOffset) {
 
     getDriverApi().flush();
     getDriverApi().commit(swapChain);
-    getDriverApi().endFrame(0);
+    getDriverApi().endFrame(0, nullptr, nullptr);
 
     getDriverApi().destroyProgram(program);
     getDriverApi().destroySwapChain(swapChain);

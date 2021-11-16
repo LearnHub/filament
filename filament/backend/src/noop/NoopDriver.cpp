@@ -64,7 +64,7 @@ void NoopDriver::setFrameCompletedCallback(Handle<HwSwapChain> sch,
 void NoopDriver::setPresentationTime(int64_t monotonic_clock_ns) {
 }
 
-void NoopDriver::endFrame(uint32_t frameId) {
+void NoopDriver::endFrame(uint32_t frameId, backend::FrameCompletedCallback callback, void* user) {
 }
 
 void NoopDriver::flush(int) {

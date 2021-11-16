@@ -431,7 +431,7 @@ TEST_F(BackendTest, UpdateImage2D) {
 
         api.flush();
         api.commit(swapChain);
-        api.endFrame(0);
+        api.endFrame(0, nullptr, nullptr);
 
         api.destroyProgram(program);
         api.destroySwapChain(swapChain);
@@ -518,7 +518,7 @@ TEST_F(BackendTest, UpdateImageSRGB) {
 
     api.flush();
     api.commit(swapChain);
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     api.destroySamplerGroup(sgroup);
     api.destroyProgram(program);
@@ -588,7 +588,7 @@ TEST_F(BackendTest, UpdateImageMipLevel) {
 
     api.flush();
     api.commit(swapChain);
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     api.destroySamplerGroup(sgroup);
     api.destroyProgram(program);
@@ -670,7 +670,7 @@ TEST_F(BackendTest, UpdateImage3D) {
 
     api.flush();
     api.commit(swapChain);
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     api.destroySamplerGroup(sgroup);
     api.destroyProgram(program);

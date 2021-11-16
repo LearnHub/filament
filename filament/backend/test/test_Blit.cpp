@@ -203,13 +203,13 @@ TEST_F(BackendTest, CubemapMinify) {
     // Push through an empty frame. Note that this test does not do
     // makeCurrent / commit and is therefore similar to renderStandaloneView.
     api.beginFrame(0, 0);
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     // Grab a screenshot.
     ScreenshotParams params { 256 >> dstLevel, 256 >> dstLevel, "CubemapMinify.png" };
     api.beginFrame(0, 0);
     dumpScreenshot(api, dstRenderTarget, &params);
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     // Wait for the ReadPixels result to come back.
     api.finish();
@@ -270,14 +270,14 @@ TEST_F(BackendTest, ColorMagnify) {
     // Push through an empty frame to allow the texture to upload and the blit to execute.
     api.beginFrame(0, 0);
     api.commit(swapChain);
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     // Grab a screenshot.
     ScreenshotParams params { kDstTexWidth, kDstTexHeight, "ColorMagnify.png" };
     api.beginFrame(0, 0);
     dumpScreenshot(api, dstRenderTargets[0], &params);
     api.commit(swapChain);
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     // Wait for the ReadPixels result to come back.
     api.finish();
@@ -344,14 +344,14 @@ TEST_F(BackendTest, ColorMinify) {
     // Push through an empty frame to allow the texture to upload and the blit to execute.
     api.beginFrame(0, 0);
     api.commit(swapChain);
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     // Grab a screenshot.
     ScreenshotParams params { kDstTexWidth, kDstTexHeight, "ColorMinify.png" };
     api.beginFrame(0, 0);
     dumpScreenshot(api, dstRenderTargets[0], &params);
     api.commit(swapChain);
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     // Wait for the ReadPixels result to come back.
     api.finish();
@@ -462,7 +462,7 @@ TEST_F(BackendTest, DepthMinify) {
     api.beginRenderPass(srcRenderTarget, params);
     api.draw(state, triangle->getRenderPrimitive());
     api.endRenderPass();
-    api.endFrame(0);
+    api, nullptr, nullptr;
 
     // Copy over the color buffer and the depth buffer.
     api.blit(TargetBufferFlags::COLOR | TargetBufferFlags::DEPTH, dstRenderTarget,
@@ -482,14 +482,14 @@ TEST_F(BackendTest, DepthMinify) {
     api.beginRenderPass(dstRenderTarget, params);
     api.draw(state, triangle->getRenderPrimitive());
     api.endRenderPass();
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     // Grab a screenshot.
     ScreenshotParams sparams { kDstTexWidth, kDstTexHeight, "DepthMinify.png" };
     api.beginFrame(0, 0);
     dumpScreenshot(api, dstRenderTarget, &sparams);
     api.commit(swapChain);
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     // Wait for the ReadPixels result to come back.
     api.finish();
@@ -586,7 +586,7 @@ TEST_F(BackendTest, ColorResolve) {
     api.beginRenderPass(srcRenderTarget, params);
     api.draw(state, triangle->getRenderPrimitive());
     api.endRenderPass();
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     // Resolve the MSAA render target into the single-sample render target.
     api.blit(TargetBufferFlags::COLOR, dstRenderTarget,
@@ -598,7 +598,7 @@ TEST_F(BackendTest, ColorResolve) {
     api.beginFrame(0, 0);
     dumpScreenshot(api, dstRenderTarget, &sparams);
     api.commit(swapChain);
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     // Wait for the ReadPixels result to come back.
     api.finish();
@@ -708,7 +708,7 @@ TEST_F(BackendTest, DepthResolve) {
     api.beginRenderPass(srcRenderTarget, params);
     api.draw(state, triangle->getRenderPrimitive());
     api.endRenderPass();
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     // Resolve the MSAA color and depth buffers into the single-sample render target.
     api.blit(TargetBufferFlags::COLOR | TargetBufferFlags::DEPTH, dstRenderTarget,
@@ -734,7 +734,7 @@ TEST_F(BackendTest, DepthResolve) {
     api.beginFrame(0, 0);
     dumpScreenshot(api, dstRenderTarget, &sparams);
     api.commit(swapChain);
-    api.endFrame(0);
+    api.endFrame(0, nullptr, nullptr);
 
     // Wait for the ReadPixels result to come back.
     api.finish();

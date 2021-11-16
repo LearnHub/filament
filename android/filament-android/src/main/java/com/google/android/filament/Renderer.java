@@ -18,6 +18,7 @@ package com.google.android.filament;
 
 import androidx.annotation.IntRange;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import java.nio.Buffer;
 import java.nio.BufferOverflowException;
@@ -294,8 +295,11 @@ public class Renderer {
      * @see #beginFrame
      * @see #render
      */
+    public void endFrame(@Nullable Object handler, @Nullable Runnable callback) {
+        nEndFrame(getNativeObject(), handler, callback);
+    }
     public void endFrame() {
-        nEndFrame(getNativeObject());
+        nEndFrame(getNativeObject(), null, null);
     }
 
     /**
@@ -660,7 +664,7 @@ public class Renderer {
     }
 
     private static native boolean nBeginFrame(long nativeRenderer, long nativeSwapChain, long frameTimeNanos);
-    private static native void nEndFrame(long nativeRenderer);
+    private static native void nEndFrame(long nativeRenderer, Object handler, Runnable callback);
     private static native void nRender(long nativeRenderer, long nativeView);
     private static native void nRenderStandaloneView(long nativeRenderer, long nativeView);
     private static native void nCopyFrame(long nativeRenderer, long nativeDstSwapChain,

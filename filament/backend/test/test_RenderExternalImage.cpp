@@ -117,7 +117,7 @@ TEST_F(BackendTest, RenderExternalImageWithoutSet) {
 
     getDriverApi().flush();
     getDriverApi().commit(swapChain);
-    getDriverApi().endFrame(0);
+    getDriverApi().endFrame(0, nullptr, nullptr);
 
     getDriverApi().stopCapture(0);
 
@@ -233,7 +233,7 @@ TEST_F(BackendTest, RenderExternalImage) {
 
     getDriverApi().flush();
     getDriverApi().commit(swapChain);
-    getDriverApi().endFrame(0);
+    getDriverApi().endFrame(0, nullptr, nullptr);
 
     getDriverApi().stopCapture(0);
 
