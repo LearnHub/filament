@@ -67,6 +67,13 @@ Java_com_google_android_filament_RenderTarget_nBuilderLayer(JNIEnv *env, jclass 
     builder->layer(RenderTarget::AttachmentPoint(attachment), layer);
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_RenderTarget_nBuilderSamples(JNIEnv *env, jclass type,
+        jlong nativeBuilder, jint samples) {
+    RenderTarget::Builder* builder = (RenderTarget::Builder*) nativeBuilder;
+    builder->samples(samples);
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_google_android_filament_RenderTarget_nBuilderBuild(JNIEnv *env, jclass type,
         jlong nativeBuilder, jlong nativeEngine) {

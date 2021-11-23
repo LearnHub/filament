@@ -121,6 +121,14 @@ public:
         Builder& layer(AttachmentPoint attachment, uint32_t layer) noexcept;
 
         /**
+         * Sets the MSAA samples to use
+         *
+         * @param level Sample count. Default is 1
+         * @return A reference to this Builder for chaining calls.
+         */
+        Builder& samples(uint8_t level) noexcept;
+
+        /**
          * Creates the RenderTarget object and returns a pointer to it.
          *
          * @return pointer to the newly created object or nullptr if exceptions are disabled and

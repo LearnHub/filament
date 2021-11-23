@@ -64,6 +64,11 @@ RenderTarget::Builder& RenderTarget::Builder::layer(AttachmentPoint pt, uint32_t
     return *this;
 }
 
+RenderTarget::Builder& RenderTarget::Builder::samples(uint8_t samples) noexcept {
+    mImpl->mSamples = samples;
+    return *this;
+}
+
 RenderTarget* RenderTarget::Builder::build(Engine& engine) {
     using backend::TextureUsage;
     const FRenderTarget::Attachment& color = mImpl->mAttachments[(size_t)AttachmentPoint::COLOR0];

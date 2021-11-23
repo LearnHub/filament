@@ -132,6 +132,18 @@ public class RenderTarget {
         }
 
         /**
+         * Sets the MSAA samples to use
+         *
+         * @param smaples Sample count. Default is 1
+         * @return A reference to this Builder for chaining calls.
+         */
+        @NonNull
+        public Builder samples(@IntRange(from = 1) int samples) {
+            nBuilderSamples(mNativeBuilder, samples);
+            return this;
+        }
+
+        /**
          * Creates the RenderTarget object and returns a pointer to it.
          *
          * @return pointer to the newly created object or nullptr if exceptions are disabled and
@@ -218,6 +230,7 @@ public class RenderTarget {
     private static native void nBuilderMipLevel(long nativeBuilder, int attachment, int level);
     private static native void nBuilderFace(long nativeBuilder, int attachment, int face);
     private static native void nBuilderLayer(long nativeBuilder, int attachment, int layer);
+    private static native void nBuilderSamples(long nativeBuilder, int samples);
     private static native long nBuilderBuild(long nativeBuilder, long nativeEngine);
 
     private static native int nGetMipLevel(long nativeRenderTarget, int attachment);
