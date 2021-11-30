@@ -3,9 +3,42 @@
 This file contains one line summaries of commits that are worthy of mentioning in release notes.
 A new header is inserted each time a *tag* is created.
 
-## v1.12.12 (currently main branch)
+## v1.15.0 (currently main branch)
+
+- engine: Fix spotlights normal bias calculation [⚠️ **Material breakage**].
+
+## v1.14.2
+
+- Metal: Fix validation error when rendering to `RenderTarget` without depth attachment.
+- engine: Fix rendering glitch with zero-scale bone transforms.
+
+## v1.14.1
+
+- engine: Improvements to shadowing.
+
+## v1.14.0
+
+- engine: Internal materials can use structures as parameters [⚠️ **Material breakage**].
+- engine: `readPixels` on a `SwapChain` must be called within `beginFrame` / `endFrame` [⚠️ **API
+  Change**].
+- engine: Fix normal bias and improve spotlight quality.
+- Java: Fix shadow biases.
+
+## v1.13.0
+
+- Android: Gradle configuration caching is now enabled.
+- Android: Filament's Gradle properties have all been renamed to `com.google.android.filament.xxx`
+  where `xxx` is the property name. See `android/build.gradle` for a complete list [⚠️]
+- Android: The Gradle property `filament_tools_dir` (now called
+  `com.google.android.filament.tools-dir`) does not have a default value anymore. Please specify one
+  in your `gradle.properties` if you reuse the Gradle plugin in your projects [⚠️]
+- engine: Fix spotlights direction and falloff [⚠️ **Material breakage**].
+- engine: Improvements to VSM and spotlight shadows.
 
 ## v1.12.11
+
+- Metal: Color grading performance improvement on M1 devices.
+- samples: Fix glitchy animation seen in gltf-viewer iOS sample.
 
 ## v1.12.10
 

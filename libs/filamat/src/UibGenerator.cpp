@@ -110,8 +110,8 @@ UniformInterfaceBlock const& UibGenerator::getPerViewUib() noexcept  {
             .add("vsmReserved0",            1, UniformInterfaceBlock::Type::FLOAT)
 
             .add("lodBias",                 1, UniformInterfaceBlock::Type::FLOAT)
-            .add("reserved1",               1, UniformInterfaceBlock::Type::FLOAT)
-            .add("reserved2",               1, UniformInterfaceBlock::Type::FLOAT)
+            .add("oneOverFarMinusNear",     1, UniformInterfaceBlock::Type::FLOAT, Precision::HIGH)
+            .add("nearOverFarMinusNear",    1, UniformInterfaceBlock::Type::FLOAT, Precision::HIGH)
             .add("reserved3",               1, UniformInterfaceBlock::Type::FLOAT)
 
             // bring PerViewUib to 2 KiB
@@ -145,8 +145,7 @@ UniformInterfaceBlock const& UibGenerator::getLightsUib() noexcept {
 UniformInterfaceBlock const& UibGenerator::getShadowUib() noexcept {
     static UniformInterfaceBlock uib = UniformInterfaceBlock::Builder()
             .name(ShadowUib::_name)
-            .add("spotLightFromWorldMatrix", CONFIG_MAX_SHADOW_CASTING_SPOTS, UniformInterfaceBlock::Type::MAT4, Precision::HIGH)
-            .add("directionShadowBias", CONFIG_MAX_SHADOW_CASTING_SPOTS, UniformInterfaceBlock::Type::FLOAT4, Precision::HIGH)
+            .add("shadows", CONFIG_MAX_SHADOW_CASTING_SPOTS, "ShadowData", sizeof(ShadowUib::ShadowData))
             .build();
     return uib;
 }
