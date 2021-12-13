@@ -3,11 +3,18 @@
 This file contains one line summaries of commits that are worthy of mentioning in release notes.
 A new header is inserted each time a *tag* is created.
 
-## v1.15.1 (currently main branch)
+## v1.15.2 (currently main branch)
+
+- engine: add support for PCSS (Percentage Closer Soft Shadows)
+
+## v1.15.1
+
+- engine: add support for DPCF (PCF shadows with contact hardening)
 
 ## v1.15.0
 
 - engine: Fix spotlights normal bias calculation [⚠️ **Material breakage**].
+- libimage: Fix loading spherical harmonics on certain locals.
 
 ## v1.14.2
 
