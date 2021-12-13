@@ -214,8 +214,8 @@ private:
     tsl::robin_set<FRenderTarget*> mPreviousRenderTargets;
     std::function<void()> mBeginFrameInternal;
 
-    backend::FrameCompletedCallback mFrameCompletedCallback;
-    void* mFrameCompletedCallbackData;
+    backend::FrameCompletedCallback mFrameCompletedCallback = nullptr;
+    void* mFrameCompletedCallbackData = nullptr;
 
     // per-frame arena for this Renderer
     LinearAllocatorArena& mPerRenderPassArena;
