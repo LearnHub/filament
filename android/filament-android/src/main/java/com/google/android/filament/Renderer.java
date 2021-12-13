@@ -302,6 +302,10 @@ public class Renderer {
         nEndFrame(getNativeObject(), null, null);
     }
 
+    public void setFrameCallback(@Nullable Object handler, @Nullable Runnable callback) {
+        nSetFrameCallback(getNativeObject(), handler, callback);
+    }
+
     /**
      * Renders a {@link View} into this <code>Renderer</code>'s window.
      *
@@ -666,6 +670,7 @@ public class Renderer {
 
     private static native boolean nBeginFrame(long nativeRenderer, long nativeSwapChain, long frameTimeNanos);
     private static native void nEndFrame(long nativeRenderer, Object handler, Runnable callback);
+    private static native void nSetFrameCallback(long nativeRenderer, Object handler, Runnable callback);
     private static native void nRender(long nativeRenderer, long nativeView);
     private static native void nRenderStandaloneView(long nativeRenderer, long nativeView);
     private static native void nCopyFrame(long nativeRenderer, long nativeDstSwapChain,

@@ -390,6 +390,7 @@ public:
      */
     void endFrame(backend::FrameCompletedCallback frameCompletedCallback = nullptr, void* user = nullptr);
 
+    void setFrameCallback(backend::FrameCompletedCallback frameCompletedCallback, void* frameCompletedCallbackData);
 
     /**
      * Reads back the content of the provided RenderTarget.

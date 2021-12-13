@@ -47,6 +47,17 @@ Java_com_google_android_filament_Renderer_nEndFrame(JNIEnv *env, jclass, jlong n
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_Renderer_nSetFrameCallback(JNIEnv *env, jclass, jlong nativeRenderer, jobject handler, jobject runnable) {
+    Renderer *renderer = (Renderer *) nativeRenderer;
+    // Note: This callback object will leak, but only once per renderer created
+    auto *callback = JniCallback::make(env, handler, runnable);
+    renderer->setFrameCallback([](void* user) {
+        JniCallback* callback = (JniCallback*)user;
+        JniCallback::postToJava(callback);
+    }, callback);
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_google_android_filament_Renderer_nRender(JNIEnv *, jclass, jlong nativeRenderer,
         jlong nativeView) {
     Renderer *renderer = (Renderer *) nativeRenderer;

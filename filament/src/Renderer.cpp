@@ -1118,6 +1118,11 @@ bool FRenderer::beginFrame(FSwapChain* swapChain, uint64_t vsyncSteadyClockTimeN
     return false;
 }
 
+void FRenderer::setFrameCallback(backend::FrameCompletedCallback frameCompletedCallback, void* frameCompletedCallbackData) {
+    mFrameCompletedCallback = frameCompletedCallback;
+    mFrameCompletedCallbackData = frameCompletedCallbackData;
+}
+
 void FRenderer::endFrame(backend::FrameCompletedCallback frameCompletedCallback, void* user) {
     SYSTRACE_CALL();
 
@@ -1143,7 +1148,7 @@ void FRenderer::endFrame(backend::FrameCompletedCallback frameCompletedCallback,
         mSwapChain = nullptr;
     }
 
-    driver.endFrame(mFrameId, frameCompletedCallback, user);
+    driver.endFrame(mFrameId, mFrameCompletedCallback, mFrameCompletedCallbackData);
 
     // gives the backend a chance to execute periodic tasks
     driver.tick();
@@ -1278,6 +1283,10 @@ void Renderer::readPixels(RenderTarget* renderTarget,
 
 void Renderer::endFrame(backend::FrameCompletedCallback frameCompletedCallback, void* user) {
     upcast(this)->endFrame(frameCompletedCallback, user);
+}
+
+void Renderer::setFrameCallback(backend::FrameCompletedCallback frameCompletedCallback, void* user) {
+    upcast(this)->setFrameCallback(frameCompletedCallback, user);
 }
 
 double Renderer::getUserTime() const {

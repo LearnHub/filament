@@ -42,6 +42,8 @@ struct JniCallback : private filament::backend::CallbackHandler {
 
     static JniCallback* make(JNIEnv* env, jobject handler, jobject runnable);
 
+    // AVN: Hack for frame callbacks
+    static void postToJava(JniCallback* callback);
     static void postToJavaAndDestroy(JniCallback* callback);
 
     void post(void* user, Callback callback) override;

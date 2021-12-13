@@ -91,6 +91,8 @@ public:
 
     void endFrame(backend::FrameCompletedCallback frameCompletedCallback, void* user);
 
+    void setFrameCallback(backend::FrameCompletedCallback frameCompletedCallback, void* frameCompletedCallbackData);
+
     void renderStandaloneView(FView const* view);
 
     void readPixels(FRenderTarget* renderTarget,
@@ -208,6 +210,9 @@ private:
     backend::TargetBufferFlags mClearFlags{};
     tsl::robin_set<FRenderTarget*> mPreviousRenderTargets;
     std::function<void()> mBeginFrameInternal;
+
+    backend::FrameCompletedCallback mFrameCompletedCallback;
+    void* mFrameCompletedCallbackData;
 
     // per-frame arena for this Renderer
     LinearAllocatorArena& mPerRenderPassArena;
