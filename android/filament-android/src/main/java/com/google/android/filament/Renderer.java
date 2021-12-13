@@ -295,11 +295,8 @@ public class Renderer {
      * @see #beginFrame
      * @see #render
      */
-    public void endFrame(@Nullable Object handler, @Nullable Runnable callback) {
-        nEndFrame(getNativeObject(), handler, callback);
-    }
     public void endFrame() {
-        nEndFrame(getNativeObject(), null, null);
+        nEndFrame(getNativeObject());
     }
 
     public void setFrameCallback(@Nullable Object handler, @Nullable Runnable callback) {
@@ -669,7 +666,7 @@ public class Renderer {
     }
 
     private static native boolean nBeginFrame(long nativeRenderer, long nativeSwapChain, long frameTimeNanos);
-    private static native void nEndFrame(long nativeRenderer, Object handler, Runnable callback);
+    private static native void nEndFrame(long nativeRenderer);
     private static native void nSetFrameCallback(long nativeRenderer, Object handler, Runnable callback);
     private static native void nRender(long nativeRenderer, long nativeView);
     private static native void nRenderStandaloneView(long nativeRenderer, long nativeView);

@@ -388,7 +388,7 @@ public:
      * @see
      * beginFrame()
      */
-    void endFrame(backend::FrameCompletedCallback frameCompletedCallback = nullptr, void* user = nullptr);
+    void endFrame();
 
     void setFrameCallback(backend::FrameCompletedCallback frameCompletedCallback, void* frameCompletedCallbackData);
 

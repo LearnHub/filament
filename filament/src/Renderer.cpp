@@ -1146,7 +1146,7 @@ void FRenderer::setFrameCallback(backend::FrameCompletedCallback frameCompletedC
     mFrameCompletedCallbackData = frameCompletedCallbackData;
 }
 
-void FRenderer::endFrame(backend::FrameCompletedCallback frameCompletedCallback, void* user) {
+void FRenderer::endFrame() {
     SYSTRACE_CALL();
 
     if (UTILS_UNLIKELY(mBeginFrameInternal)) {
@@ -1324,8 +1324,8 @@ void Renderer::readPixels(RenderTarget* renderTarget,
             xoffset, yoffset, width, height, std::move(buffer));
 }
 
-void Renderer::endFrame(backend::FrameCompletedCallback frameCompletedCallback, void* user) {
-    upcast(this)->endFrame(frameCompletedCallback, user);
+void Renderer::endFrame() {
+    upcast(this)->endFrame();
 }
 
 void Renderer::setFrameCallback(backend::FrameCompletedCallback frameCompletedCallback, void* user) {

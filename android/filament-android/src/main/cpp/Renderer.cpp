@@ -37,13 +37,9 @@ Java_com_google_android_filament_Renderer_nBeginFrame(JNIEnv *, jclass, jlong na
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_google_android_filament_Renderer_nEndFrame(JNIEnv *env, jclass, jlong nativeRenderer, jobject handler, jobject runnable) {
+Java_com_google_android_filament_Renderer_nEndFrame(JNIEnv *, jclass, jlong nativeRenderer) {
     Renderer *renderer = (Renderer *) nativeRenderer;
-    auto *callback = JniCallback::make(env, handler, runnable);
-    renderer->endFrame([](void* user) {
-        JniCallback* callback = (JniCallback*)user;
-        JniCallback::postToJavaAndDestroy(callback);
-    }, callback);
+    renderer->endFrame();
 }
 
 extern "C" JNIEXPORT void JNICALL

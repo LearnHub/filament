@@ -89,7 +89,7 @@ public:
     void copyFrame(FSwapChain* dstSwapChain, Viewport const& dstViewport,
             Viewport const& srcViewport, CopyFrameFlag flags);
 
-    void endFrame(backend::FrameCompletedCallback frameCompletedCallback, void* user);
+    void endFrame();
 
     void setFrameCallback(backend::FrameCompletedCallback frameCompletedCallback, void* frameCompletedCallbackData);
 
