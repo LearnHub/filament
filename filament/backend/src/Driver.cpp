@@ -52,6 +52,7 @@ DriverBase::DriverBase(Dispatcher* dispatcher) noexcept
                     serviceThreadCondition.wait(lock);
                 }
                 if (mExitRequested) {
+                    ASSERT_POSTCONDITION(serviceThreadCallbackQueue.empty(), "Callback queue not empty, going to leak memory!");
                     break;
                 }
                 // move the callbacks to a temporary vector

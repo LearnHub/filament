@@ -92,7 +92,6 @@ JniBufferCallback::JniBufferCallback(JNIEnv* env, jobject handler, jobject callb
         AutoBuffer&& buffer)
         : JniCallback(env, handler, callback),
         mBuffer(std::move(buffer)) {
-    acquireCallbackJni(env, mCallbackUtils);
 }
 
 JniBufferCallback::~JniBufferCallback() = default;
@@ -115,7 +114,6 @@ JniImageCallback* JniImageCallback::make(filament::Engine*,
 JniImageCallback::JniImageCallback(JNIEnv* env, jobject handler, jobject callback, long image)
         : JniCallback(env, handler, callback),
         mImage(image) {
-    acquireCallbackJni(env, mCallbackUtils);
 }
 
 JniImageCallback::~JniImageCallback() = default;
