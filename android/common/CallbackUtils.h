@@ -44,6 +44,8 @@ struct JniCallback : private filament::backend::CallbackHandler {
 
     // AVN: Hack for frame callbacks
     static void postToJava(JniCallback* callback);
+    static void destroyReferences(JniCallback* callback);
+
     static void postToJavaAndDestroy(JniCallback* callback);
 
     void post(void* user, Callback callback) override;

@@ -114,7 +114,13 @@ FRenderer::~FRenderer() noexcept {
 #endif
 }
 
-void FRenderer::terminate(FEngine& engine) {
+void FRenderer::terminate(FEngine& engine) {    
+    if(mDestroyCallback) {
+        mDestroyCallback(mFrameCompletedCallbackData);
+        mDestroyCallback = nullptr;
+        mFrameCompletedCallback = nullptr;
+        mFrameCompletedCallbackData = nullptr;
+    }
     // Here we would cleanly free resources we've allocated or we own, in particular we would
     // shut down threads if we created any.
     DriverApi& driver = engine.getDriverApi();
@@ -1141,9 +1147,10 @@ bool FRenderer::beginFrame(FSwapChain* swapChain, uint64_t vsyncSteadyClockTimeN
     return false;
 }
 
-void FRenderer::setFrameCallback(backend::FrameCompletedCallback frameCompletedCallback, void* frameCompletedCallbackData) {
+void FRenderer::setFrameCallback(backend::FrameCompletedCallback frameCompletedCallback, backend::FrameCompletedCallback destroyCallback, void* frameCompletedCallbackData) {
     mFrameCompletedCallback = frameCompletedCallback;
     mFrameCompletedCallbackData = frameCompletedCallbackData;
+    mDestroyCallback = destroyCallback;
 }
 
 void FRenderer::endFrame() {
@@ -1328,8 +1335,8 @@ void Renderer::endFrame() {
     upcast(this)->endFrame();
 }
 
-void Renderer::setFrameCallback(backend::FrameCompletedCallback frameCompletedCallback, void* user) {
-    upcast(this)->setFrameCallback(frameCompletedCallback, user);
+void Renderer::setFrameCallback(backend::FrameCompletedCallback frameCompletedCallback, backend::FrameCompletedCallback destroyCallback, void* user) {
+    upcast(this)->setFrameCallback(frameCompletedCallback, destroyCallback, user);
 }
 
 double Renderer::getUserTime() const {

@@ -69,10 +69,18 @@ void JniCallback::post(void* user, filament::backend::CallbackHandler::Callback 
     callback(user);
 }
 
-// AVN: Hack function for frame callbacks (hence we can assume it's an executor not a handler)
+// AVN: Hack functions for frame and destruction callbacks (hence we can assume it's an executor not a handler)
 void JniCallback::postToJava(JniCallback* callback) {
     JNIEnv* env = filament::VirtualMachineEnv::get().getEnvironment();
     env->CallVoidMethod(callback->mHandler, callback->mCallbackUtils.execute, callback->mCallback);
+}
+void JniCallback::destroyReferences(JniCallback* callback) {
+    JNIEnv* env = filament::VirtualMachineEnv::get().getEnvironment();
+    env->DeleteGlobalRef(callback->mHandler);
+    env->DeleteGlobalRef(callback->mCallback);
+    env->DeleteGlobalRef(callback->mCallbackUtils.handlerClass);
+    env->DeleteGlobalRef(callback->mCallbackUtils.executorClass);
+    delete callback;
 }
 
 void JniCallback::postToJavaAndDestroy(JniCallback* callback) {

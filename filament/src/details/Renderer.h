@@ -91,7 +91,7 @@ public:
 
     void endFrame();
 
-    void setFrameCallback(backend::FrameCompletedCallback frameCompletedCallback, void* frameCompletedCallbackData);
+    void setFrameCallback(backend::FrameCompletedCallback frameCompletedCallback, backend::FrameCompletedCallback destroyCallback, void* frameCompletedCallbackData);
 
     void renderStandaloneView(FView const* view);
 
@@ -215,6 +215,7 @@ private:
     std::function<void()> mBeginFrameInternal;
 
     backend::FrameCompletedCallback mFrameCompletedCallback = nullptr;
+    backend::FrameCompletedCallback mDestroyCallback = nullptr;
     void* mFrameCompletedCallbackData = nullptr;
 
     // per-frame arena for this Renderer
