@@ -64,7 +64,8 @@ constexpr size_t CONFIG_MAX_SHADOW_CASCADES = 4;
 
 // This value is also limited by UBO size, ES3.0 only guarantees 16 KiB.
 // We store 64 bytes per bone.
-constexpr size_t CONFIG_MAX_BONE_COUNT = 256;
+// AVN: Limited to 64 to prevent crashing on msm8976 Expeditions kit mobile
+constexpr size_t CONFIG_MAX_BONE_COUNT = 64;
 
 } // namespace filament
 
