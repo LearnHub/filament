@@ -20,6 +20,8 @@
 #include <utils/compiler.h>
 #include <utils/CString.h>
 
+#include <private/filament/Variant.h>
+
 #include <stdint.h>
 
 namespace filaflat {
@@ -45,6 +47,12 @@ public:
         return (mCursor + size) > mEnd;
     }
 
+    void skipAlignmentPadding() {
+        const uint8_t padSize = (8 - (intptr_t(mCursor) % 8)) % 8;
+        mCursor += padSize;
+        assert_invariant(0 == (intptr_t(mCursor) % 8));
+    }
+
     bool read(bool* b) noexcept {
         if (willOverflow(1)) {
             return false;
@@ -61,6 +69,10 @@ public:
         *i = mCursor[0];
         mCursor += 1;
         return true;
+    }
+
+    bool read(filament::Variant* v) noexcept {
+        return read(&v->key);
     }
 
     bool read(uint16_t* i) noexcept {

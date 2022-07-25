@@ -83,6 +83,8 @@ public:
     using MultiSampleAntiAliasingOptions = MultiSampleAntiAliasingOptions;
     using VsmShadowOptions = VsmShadowOptions;
     using SoftShadowOptions = SoftShadowOptions;
+    using ScreenSpaceReflectionsOptions = ScreenSpaceReflectionsOptions;
+    using GuardBandOptions = GuardBandOptions;
 
     /**
      * Sets the View's name. Only useful for debugging.
@@ -331,6 +333,34 @@ public:
     TemporalAntiAliasingOptions const& getTemporalAntiAliasingOptions() const noexcept;
 
     /**
+     * Enables or disable screen-space reflections. Disabled by default.
+     *
+     * @param options screen-space reflections options
+     */
+    void setScreenSpaceReflectionsOptions(ScreenSpaceReflectionsOptions options) noexcept;
+
+    /**
+     * Returns screen-space reflections options.
+     *
+     * @return screen-space reflections options
+     */
+    ScreenSpaceReflectionsOptions const& getScreenSpaceReflectionsOptions() const noexcept;
+
+    /**
+     * Enables or disable screen-space guard band. Disabled by default.
+     *
+     * @param options guard band options
+     */
+    void setGuardBandOptions(GuardBandOptions options) noexcept;
+
+    /**
+     * Returns screen-space guard band options.
+     *
+     * @return guard band options
+     */
+    GuardBandOptions const& getGuardBandOptions() const noexcept;
+
+    /**
      * Enables or disable multi-sample anti-aliasing (MSAA). Disabled by default.
      *
      * @param options multi-sample anti-aliasing options
@@ -564,15 +594,18 @@ public:
      * Enables or disables post processing. Enabled by default.
      *
      * Post-processing includes:
+     *  - Depth-of-field
      *  - Bloom
-     *  - Tone-mapping & gamma encoding
+     *  - Vignetting
+     *  - Temporal Anti-aliasing (TAA)
+     *  - Color grading & gamma encoding
      *  - Dithering
-     *  - MSAA
      *  - FXAA
      *  - Dynamic scaling
      *
-     * Disabling post-processing forgoes color correctness as well as anti-aliasing and
-     * should only be used experimentally (e.g., for UI overlays).
+     * Disabling post-processing forgoes color correctness as well as some anti-aliasing techniques
+     * and should only be used for debugging, UI overlays or when using custom render targets
+     * (see RenderTarget).
      *
      * @param enabled true enables post processing, false disables it.
      *
@@ -656,7 +689,7 @@ public:
      * @tparam method   Method to call on T (e.g.: &Foo::bar)
      * @param x         Horizontal coordinate to query in the viewport with origin on the left.
      * @param y         Vertical coordinate to query on the viewport with origin at the bottom.
-     * @param data      A pointer to an instance of T
+     * @param instance  A pointer to an instance of T
      * @param handler   Handler to dispatch the callback or nullptr for the default handler.
      */
     template<typename T, void(T::*method)(PickingQueryResult const&)>
@@ -676,7 +709,7 @@ public:
      * @tparam method   Method to call on T (e.g.: &Foo::bar)
      * @param x         Horizontal coordinate to query in the viewport with origin on the left.
      * @param y         Vertical coordinate to query on the viewport with origin at the bottom.
-     * @param data      An instance of T
+     * @param instance  An instance of T
      * @param handler   Handler to dispatch the callback or nullptr for the default handler.
      */
     template<typename T, void(T::*method)(PickingQueryResult const&)>

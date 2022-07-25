@@ -16,7 +16,8 @@
 
 #include <utils/Log.h>
 
-#include <string>
+#include "ostream_.h"
+
 #include <utils/compiler.h>
 
 #ifdef __ANDROID__
@@ -27,7 +28,6 @@
 #endif
 
 namespace utils {
-
 namespace io {
 
 class LogStream : public ostream {
@@ -46,6 +46,7 @@ private:
 };
 
 ostream& LogStream::flush() noexcept {
+    std::lock_guard lock(mImpl->mLock);
     Buffer& buf = getBuffer();
 #ifdef __ANDROID__
     switch (mPriority) {
@@ -81,10 +82,18 @@ ostream& LogStream::flush() noexcept {
 #endif
             break;
     }
-#endif // ANDROID
+#endif // __ANDROID__
     buf.reset();
     return *this;
 }
+
+
+/*
+ * We can't use thread_local because on Android we're currently using several dynamic libraries
+ * including this .o (via libutils.a), which violates the ODR and ends-up with only one of
+ * the thread_local instance initialized.
+ * For this reason, ostream is protected by a mutex instead.
+ */
 
 static LogStream cout(LogStream::Priority::LOG_DEBUG);
 static LogStream cerr(LogStream::Priority::LOG_ERROR);

@@ -16,8 +16,6 @@
 
 #include "TrianglePrimitive.h"
 
-#include <filament/MaterialEnums.h>
-
 namespace test {
 
 using namespace filament;
@@ -45,13 +43,8 @@ TrianglePrimitive::TrianglePrimitive(filament::backend::DriverApi& driverApi,
             }
     };
 
-   // Backends do not (and should not) know the semantics of each vertex attribute, but they
-   // need to know whether the vertex shader consumes them as integers or as floats.
-   // NOTE: This flag needs to be set regardless of whether the attribute is actually declared.
-   attributes[BONE_INDICES].flags |= Attribute::FLAG_INTEGER_TARGET;
-
-    AttributeBitset enabledAttributes;
-    enabledAttributes.set(VertexAttribute::POSITION);
+    // location 5 comes from test_MissingRequiredAttributes.cpp shader
+    attributes[5].flags |= Attribute::FLAG_INTEGER_TARGET;
 
     const size_t size = sizeof(math::float2) * 3;
     mBufferObject = mDriverApi.createBufferObject(size, BufferObjectBinding::VERTEX, BufferUsage::STATIC);
@@ -65,10 +58,8 @@ TrianglePrimitive::TrianglePrimitive(filament::backend::DriverApi& driverApi,
     BufferDescriptor indexBufferDesc(gIndices, sizeof(short) * 3);
     mDriverApi.updateIndexBuffer(mIndexBuffer, std::move(indexBufferDesc), 0);
 
-    mRenderPrimitive = mDriverApi.createRenderPrimitive(0);
-
-    mDriverApi.setRenderPrimitiveBuffer(mRenderPrimitive, mVertexBuffer, mIndexBuffer);
-    mDriverApi.setRenderPrimitiveRange(mRenderPrimitive, PrimitiveType::TRIANGLES, 0, 0, 2, 3);
+    mRenderPrimitive = mDriverApi.createRenderPrimitive(
+            mVertexBuffer, mIndexBuffer, PrimitiveType::TRIANGLES, 0, 0, 2, 3);
 }
 
 void TrianglePrimitive::updateVertices(const filament::math::float2 vertices[3]) noexcept {

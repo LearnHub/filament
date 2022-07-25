@@ -62,13 +62,17 @@ public class Renderer {
         /**
          * How far in advance a buffer must be queued for presentation at a given time in ns
          * On Android you can use {@link android.view.Display#getPresentationDeadlineNanos()}.
+         * @deprecated this value is ignored
          */
+        @Deprecated
         public long presentationDeadlineNanos = 0;
 
         /**
          * Offset by which vsyncSteadyClockTimeNano provided in beginFrame() is offset in ns
          * On Android you can use {@link android.view.Display#getAppVsyncOffsetNanos()}.
+         * @deprecated this value is ignored
          */
+        @Deprecated
         public long vsyncOffsetNanos = 0;
     };
 
@@ -176,8 +180,7 @@ public class Renderer {
      */
     public void setDisplayInfo(@NonNull DisplayInfo info) {
         mDisplayInfo = info;
-        nSetDisplayInfo(getNativeObject(),
-                info.refreshRate, info.presentationDeadlineNanos, info.vsyncOffsetNanos);
+        nSetDisplayInfo(getNativeObject(), info.refreshRate);
     }
 
     /**
@@ -249,6 +252,23 @@ public class Renderer {
     }
 
     /**
+     * Set the time at which the frame must be presented to the display.
+     * <p>
+     * This must be called between {@link #beginFrame} and {@link #endFrame}.
+     * </p>
+     *
+     * @param monotonicClockNanos  The time in nanoseconds corresponding to the system monotonic
+     *                             up-time clock. The presentation time is typically set in the
+     *                             middle of the period of interest and cannot be too far in the
+     *                             future as it is limited by how many buffers are available in
+     *                             the display sub-system. Typically it is set to 1 or 2 vsync
+     *                             periods away.
+     */
+    public void setPresentationTime(long monotonicClockNanos) {
+        nSetPresentationTime(getNativeObject(), monotonicClockNanos);
+    }
+
+    /**
      * Sets up a frame for this <code>Renderer</code>.
      * <p><code>beginFrame</code> manages frame pacing, and returns whether or not a frame should be
      * drawn. The goal of this is to skip frames when the GPU falls behind in order to keep the frame
@@ -314,7 +334,7 @@ public class Renderer {
      *
      * <p><code>render()</code> generates commands for each of the following stages:</p>
      * <ul>
-     * <li>Shadow map pass, if needed (currently only a single shadow map is supported)</li>
+     * <li>Shadow map passes, if needed</li>
      * <li>Depth pre-pass</li>
      * <li>SSAO pass, if enabled</li>
      * <li>Color pass</li>
@@ -536,6 +556,10 @@ public class Renderer {
      * Typically, this will happen after multiple calls to {@link #beginFrame},
      * {@link #render}, {@link #endFrame}.</p>
      * <br>
+     * <p>OpenGL only: if issuing a <code>readPixels</code> on a {@link RenderTarget} backed by a
+     * {@link Texture} that had data uploaded to it via {@link Texture#setImage}, the data returned
+     * from <code>readPixels</code> will be y-flipped with respect to the {@link Texture#setImage}
+     * call.</p>
      * <p><code>readPixels</code> is intended for debugging and testing.
      * It will impact performance significantly.</p>
      *
@@ -665,6 +689,7 @@ public class Renderer {
         mNativeObject = 0;
     }
 
+    private static native void nSetPresentationTime(long nativeObject, long monotonicClockNanos);
     private static native boolean nBeginFrame(long nativeRenderer, long nativeSwapChain, long frameTimeNanos);
     private static native void nEndFrame(long nativeRenderer);
     private static native void nSetFrameCallback(long nativeRenderer, Object handler, Runnable callback);
@@ -687,8 +712,7 @@ public class Renderer {
             Object handler, Runnable callback);
     private static native double nGetUserTime(long nativeRenderer);
     private static native void nResetUserTime(long nativeRenderer);
-    private static native void nSetDisplayInfo(long nativeRenderer,
-            float refreshRate, long presentationDeadlineNanos, long vsyncOffsetNanos);
+    private static native void nSetDisplayInfo(long nativeRenderer, float refreshRate);
     private static native void nSetFrameRateOptions(long nativeRenderer,
             float interval, float headRoomRatio, float scaleRate, int history);
     private static native void nSetClearOptions(long nativeRenderer,

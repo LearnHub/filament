@@ -259,14 +259,14 @@ Java_com_google_android_filament_View_nSetAmbientOcclusionOptions(JNIEnv*, jclas
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_google_android_filament_View_nSetSSCTOptions(JNIEnv *, jclass, jlong nativeView,
-        jfloat ssctLightConeRad, jfloat ssctStartTraceDistance, jfloat ssctContactDistanceMax,
+        jfloat ssctLightConeRad, jfloat ssctShadowDistance, jfloat ssctContactDistanceMax,
         jfloat ssctIntensity, jfloat ssctLightDirX, jfloat ssctLightDirY, jfloat ssctLightDirZ,
         jfloat ssctDepthBias, jfloat ssctDepthSlopeBias, jint ssctSampleCount,
         jint ssctRayCount, jboolean ssctEnabled) {
     View* view = (View*) nativeView;
     View::AmbientOcclusionOptions options = view->getAmbientOcclusionOptions();
     options.ssct.lightConeRad = ssctLightConeRad;
-    options.ssct.shadowDistance = ssctStartTraceDistance;
+    options.ssct.shadowDistance = ssctShadowDistance;
     options.ssct.contactDistanceMax = ssctContactDistanceMax;
     options.ssct.intensity = ssctIntensity;
     options.ssct.lightDirection = math::float3{ ssctLightDirX, ssctLightDirY, ssctLightDirZ };
@@ -391,6 +391,16 @@ Java_com_google_android_filament_View_nSetTemporalAntiAliasingOptions(JNIEnv *, 
 }
 
 extern "C"
+JNIEXPORT void JNICALL
+Java_com_google_android_filament_View_nSetScreenSpaceReflectionsOptions(JNIEnv*, jclass,
+        jlong nativeView, jfloat thickness, jfloat bias, jfloat maxDistance, jfloat stride, jboolean enabled) {
+    View* view = (View*) nativeView;
+    view->setScreenSpaceReflectionsOptions({.thickness = thickness, .bias = bias,
+            .maxDistance = maxDistance, .stride = stride, .enabled = (bool) enabled
+    });
+}
+
+extern "C"
 JNIEXPORT jboolean JNICALL
 Java_com_google_android_filament_View_nIsShadowingEnabled(JNIEnv *, jclass, jlong nativeView) {
     View* view = (View*) nativeView;
@@ -450,4 +460,12 @@ Java_com_google_android_filament_View_nPick(JNIEnv* env, jclass,
         env->SetFloatField(obj, jniState.fragCoordZFieldId, result.fragCoords.z);
         JniCallback::postToJavaAndDestroy(callback);
     }, callback->getHandler());
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_google_android_filament_View_nSetGuardBandOptions(JNIEnv *, jclass,
+        jlong nativeView, jboolean enabled) {
+    View* view = (View*) nativeView;
+    view->setGuardBandOptions({ .enabled = (bool)enabled });
 }

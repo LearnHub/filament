@@ -62,6 +62,7 @@ enum UTILS_PUBLIC ChunkType : uint64_t {
     MaterialDomain = charTo64bitNum("MAT_DOMN"),
     MaterialRefraction = charTo64bitNum("MAT_REFM"),
     MaterialRefractionType = charTo64bitNum("MAT_REFT"),
+    MaterialReflectionMode = charTo64bitNum("MAT_REFL"),
 
     MaterialRequiredAttributes = charTo64bitNum("MAT_REQA"),
     MaterialDepthWriteSet = charTo64bitNum("MAT_DEWS"),
@@ -71,6 +72,7 @@ enum UTILS_PUBLIC ChunkType : uint64_t {
     MaterialColorWrite = charTo64bitNum("MAT_CWRIT"),
     MaterialDepthWrite = charTo64bitNum("MAT_DWRIT"),
     MaterialDepthTest = charTo64bitNum("MAT_DTEST"),
+    MaterialInstanced = charTo64bitNum("MAT_INSTA"),
     MaterialCullingMode = charTo64bitNum("MAT_CUMO"),
 
     MaterialHasCustomDepthShader =charTo64bitNum("MAT_CSDP"),

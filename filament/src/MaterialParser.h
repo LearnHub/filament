@@ -17,7 +17,6 @@
 #ifndef TNT_FILAMENT_MATERIALPARSER_H
 #define TNT_FILAMENT_MATERIALPARSER_H
 
-#include <filaflat/BlobDictionary.h>
 #include <filaflat/ChunkContainer.h>
 #include <filaflat/MaterialChunk.h>
 
@@ -29,10 +28,10 @@
 #include <utils/CString.h>
 
 #include <inttypes.h>
+#include "private/filament/Variant.h"
 
 namespace filaflat {
 class ChunkContainer;
-class ShaderBuilder;
 class Unflattener;
 }
 
@@ -74,6 +73,7 @@ public:
     bool getTransparencyMode(TransparencyMode* value) const noexcept;
     bool getColorWrite(bool* value) const noexcept;
     bool getDepthTest(bool* value) const noexcept;
+    bool getInstanced(bool* value) const noexcept;
     bool getInterpolation(Interpolation* value) const noexcept;
     bool getVertexDomain(VertexDomain* value) const noexcept;
     bool getMaterialDomain(MaterialDomain* domain) const noexcept;
@@ -85,13 +85,14 @@ public:
     bool getRequiredAttributes(AttributeBitset*) const noexcept;
     bool getRefractionMode(RefractionMode* value) const noexcept;
     bool getRefractionType(RefractionType* value) const noexcept;
+    bool getReflectionMode(ReflectionMode* value) const noexcept;
     bool hasCustomDepthShader(bool* value) const noexcept;
     bool hasSpecularAntiAliasing(bool* value) const noexcept;
     bool getSpecularAntiAliasingVariance(float* value) const noexcept;
     bool getSpecularAntiAliasingThreshold(float* value) const noexcept;
 
-    bool getShader(filaflat::ShaderBuilder& shader, backend::ShaderModel shaderModel,
-            uint8_t variant, backend::ShaderType stage) noexcept;
+    bool getShader(filaflat::ShaderContent& shader, backend::ShaderModel shaderModel,
+            Variant variant, backend::ShaderType stage) noexcept;
 
 private:
     struct MaterialParserDetails {

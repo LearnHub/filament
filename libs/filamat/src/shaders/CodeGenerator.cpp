@@ -235,10 +235,13 @@ io::sstream& CodeGenerator::generateShaderInputs(io::sstream& out, ShaderType ty
             }
         }
 
-        out << SHADERS_INPUTS_VS_DATA;
+        out << SHADERS_ATTRIBUTES_VS_DATA;
+
+        generateDefine(out, "VARYING", "out");
     } else if (type == ShaderType::FRAGMENT) {
-        out << SHADERS_INPUTS_FS_DATA;
+        generateDefine(out, "VARYING", "in");
     }
+    out << SHADERS_VARYINGS_GLSL_DATA;
     return out;
 }
 
@@ -331,7 +334,7 @@ io::sstream& CodeGenerator::generateUniforms(io::sstream& out, ShaderType shader
         out << "    " << precision;
         if (precision[0] != '\0') out << " ";
         out << type << " " << info.name.c_str();
-        if (info.size > 1) {
+        if (info.size > 0) {
             out << "[" << info.size << "]";
         }
         out << ";\n";
@@ -370,7 +373,11 @@ io::sstream& CodeGenerator::generateSamplers(
             // allows the sampler bindings to live in a separate "namespace" that starts at zero.
             // Note that the set specifier is not covered by the desktop GLSL spec, including
             // recent versions. It is only documented in the GL_KHR_vulkan_glsl extension.
-            if (mTargetApi == TargetApi::VULKAN) {
+            if (mTargetApi == TargetApi::VULKAN ||
+            // For Metal, the sampler binding index must less than 16. But we generate sampler binding
+            // index sequentially regardless binding shader stages, so it could be greater than 15.
+            // To avoid this problem, we have to re-calculate resource binding indices each of shader stages.
+                mTargetApi == TargetApi::METAL) {
                 out << ", set = 1";
             }
 
@@ -384,8 +391,7 @@ io::sstream& CodeGenerator::generateSamplers(
     return out;
 }
 
-io::sstream& CodeGenerator::generateSubpass(io::sstream& out,
-        SubpassInfo subpass) {
+io::sstream& CodeGenerator::generateSubpass(io::sstream& out, SubpassInfo subpass) {
     if (!subpass.isValid) {
         return out;
     }
@@ -515,13 +521,23 @@ io::sstream& CodeGenerator::generateQualityDefine(io::sstream& out, ShaderQualit
 }
 
 io::sstream& CodeGenerator::generateCommon(io::sstream& out, ShaderType type) {
-    out << SHADERS_COMMON_MATH_FS_DATA;
-    out << SHADERS_COMMON_SHADOWING_FS_DATA;
+    out << SHADERS_COMMON_MATH_GLSL_DATA;
+    out << SHADERS_COMMON_SHADOWING_GLSL_DATA;
     if (type == ShaderType::VERTEX) {
     } else if (type == ShaderType::FRAGMENT) {
         out << SHADERS_COMMON_SHADING_FS_DATA;
         out << SHADERS_COMMON_GRAPHICS_FS_DATA;
         out << SHADERS_COMMON_MATERIAL_FS_DATA;
+    }
+    return out;
+}
+
+io::sstream& CodeGenerator::generatePostProcessCommon(io::sstream& out, ShaderType type) {
+    out << SHADERS_COMMON_MATH_GLSL_DATA;
+    if (type == ShaderType::VERTEX) {
+    } else if (type == ShaderType::FRAGMENT) {
+        out << SHADERS_COMMON_SHADING_FS_DATA;
+        out << SHADERS_COMMON_GRAPHICS_FS_DATA;
     }
     return out;
 }
@@ -554,15 +570,16 @@ io::sstream& CodeGenerator::generatePostProcessInputs(io::sstream& out, ShaderTy
 
 io::sstream& CodeGenerator::generatePostProcessGetters(io::sstream& out,
         ShaderType type) {
-    out << SHADERS_COMMON_GETTERS_FS_DATA;
+    out << SHADERS_COMMON_GETTERS_GLSL_DATA;
     if (type == ShaderType::VERTEX) {
         out << SHADERS_POST_PROCESS_GETTERS_VS_DATA;
+    } else if (type == ShaderType::FRAGMENT) {
     }
     return out;
 }
 
 io::sstream& CodeGenerator::generateGetters(io::sstream& out, ShaderType type) {
-    out << SHADERS_COMMON_GETTERS_FS_DATA;
+    out << SHADERS_COMMON_GETTERS_GLSL_DATA;
     if (type == ShaderType::VERTEX) {
         out << SHADERS_GETTERS_VS_DATA;
     } else if (type == ShaderType::FRAGMENT) {
@@ -584,14 +601,18 @@ io::sstream& CodeGenerator::generateShaderLit(io::sstream& out, ShaderType type,
     if (type == ShaderType::VERTEX) {
     } else if (type == ShaderType::FRAGMENT) {
         out << SHADERS_COMMON_LIGHTING_FS_DATA;
-        if (variant.hasShadowReceiver()) {
+        if (filament::Variant::isShadowReceiverVariant(variant)) {
             out << SHADERS_SHADOWING_FS_DATA;
         }
+
+        // the only reason we have this assert here is that we used to have a check,
+        // which seemed unnecessary.
+        assert_invariant(shading != Shading::UNLIT);
 
         out << SHADERS_BRDF_FS_DATA;
         switch (shading) {
             case Shading::UNLIT:
-                assert("Lit shader generated with unlit shading model");
+                // can't happen
                 break;
             case Shading::SPECULAR_GLOSSINESS:
             case Shading::LIT:
@@ -609,10 +630,9 @@ io::sstream& CodeGenerator::generateShaderLit(io::sstream& out, ShaderType type,
                 break;
         }
 
-        if (shading != Shading::UNLIT) {
-            out << SHADERS_AMBIENT_OCCLUSION_FS_DATA;
-            out << SHADERS_LIGHT_INDIRECT_FS_DATA;
-        }
+        out << SHADERS_AMBIENT_OCCLUSION_FS_DATA;
+        out << SHADERS_LIGHT_INDIRECT_FS_DATA;
+
         if (variant.hasDirectionalLighting()) {
             out << SHADERS_LIGHT_DIRECTIONAL_FS_DATA;
         }
@@ -630,11 +650,22 @@ io::sstream& CodeGenerator::generateShaderUnlit(io::sstream& out, ShaderType typ
     if (type == ShaderType::VERTEX) {
     } else if (type == ShaderType::FRAGMENT) {
         if (hasShadowMultiplier) {
-            if (variant.hasShadowReceiver()) {
+            if (filament::Variant::isShadowReceiverVariant(variant)) {
                 out << SHADERS_SHADOWING_FS_DATA;
             }
         }
         out << SHADERS_SHADING_UNLIT_FS_DATA;
+    }
+    return out;
+}
+
+io::sstream& CodeGenerator::generateShaderReflections(utils::io::sstream& out, ShaderType type,
+        filament::Variant variant) {
+    if (type == ShaderType::VERTEX) {
+    } else if (type == ShaderType::FRAGMENT) {
+        out << SHADERS_COMMON_LIGHTING_FS_DATA;
+        out << SHADERS_LIGHT_REFLECTIONS_FS_DATA;
+        out << SHADERS_SHADING_REFLECTIONS_FS_DATA;
     }
     return out;
 }

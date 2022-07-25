@@ -7,12 +7,18 @@
  */
 
 void main() {
+#if defined(TARGET_METAL_ENVIRONMENT) || defined(TARGET_VULKAN_ENVIRONMENT)
+    instance_index = gl_InstanceIndex;
+#else
+    instance_index = gl_InstanceID;
+#endif
+
     // Initialize the inputs to sensible default values, see material_inputs.vs
 #if defined(USE_OPTIMIZED_DEPTH_VERTEX_SHADER)
 
     // In USE_OPTIMIZED_DEPTH_VERTEX_SHADER mode, we can even skip this if we're already in
     // VERTEX_DOMAIN_DEVICE and we don't have VSM.
-#if !defined(VERTEX_DOMAIN_DEVICE) || defined(HAS_VSM)
+#if !defined(VERTEX_DOMAIN_DEVICE) || defined(VARIANT_HAS_VSM)
     // Run initMaterialVertex to compute material.worldPosition.
     MaterialVertexInputs material;
     initMaterialVertex(material);
@@ -34,22 +40,26 @@ void main() {
         // We encode the orthonormal basis as a quaternion to save space in the attributes
         toTangentFrame(mesh_tangents, material.worldNormal, vertex_worldTangent.xyz);
 
-        #if defined(HAS_SKINNING_OR_MORPHING)
-        //AVN: Tangent for morphs not being supplied properly so ignoring for now. https://github.com/google/filament/issues/1609
-        // if ((objectUniforms.flags & FILAMENT_OBJECT_MORPHING_ENABLED_BIT) != 0u) {
-        //     vec3 normal0, normal1, normal2, normal3;
-        //     toTangentFrame(mesh_custom4, normal0);
-        //     toTangentFrame(mesh_custom5, normal1);
-        //     toTangentFrame(mesh_custom6, normal2);
-        //     toTangentFrame(mesh_custom7, normal3);
-        //     material.worldNormal += objectUniforms.morphWeights.x * normal0;
-        //     material.worldNormal += objectUniforms.morphWeights.y * normal1;
-        //     material.worldNormal += objectUniforms.morphWeights.z * normal2;
-        //     material.worldNormal += objectUniforms.morphWeights.w * normal3;
-        //     material.worldNormal = normalize(material.worldNormal);
-        // }
+        #if defined(VARIANT_HAS_SKINNING_OR_MORPHING)
+        if ((getObjectUniforms().flagsChannels & FILAMENT_OBJECT_MORPHING_ENABLED_BIT) != 0u) {
+            #if defined(LEGACY_MORPHING)
+            vec3 normal0, normal1, normal2, normal3;
+            toTangentFrame(mesh_custom4, normal0);
+            toTangentFrame(mesh_custom5, normal1);
+            toTangentFrame(mesh_custom6, normal2);
+            toTangentFrame(mesh_custom7, normal3);
+            vec3 baseNormal = material.worldNormal;
+            material.worldNormal += morphingUniforms.weights[0].xyz * (normal0 - baseNormal);
+            material.worldNormal += morphingUniforms.weights[1].xyz * (normal1 - baseNormal);
+            material.worldNormal += morphingUniforms.weights[2].xyz * (normal2 - baseNormal);
+            material.worldNormal += morphingUniforms.weights[3].xyz * (normal3 - baseNormal);
+            #else
+            morphNormal(material.worldNormal);
+            material.worldNormal = normalize(material.worldNormal);
+            #endif
+        }
 
-        if ((objectUniforms.flags & FILAMENT_OBJECT_SKINNING_ENABLED_BIT) != 0u) {
+        if ((getObjectUniforms().flagsChannels & FILAMENT_OBJECT_SKINNING_ENABLED_BIT) != 0u) {
             skinNormal(material.worldNormal, mesh_bone_indices, mesh_bone_weights);
             skinNormal(vertex_worldTangent.xyz, mesh_bone_indices, mesh_bone_weights);
         }
@@ -59,20 +69,38 @@ void main() {
         // because we ensure the worldFromModelNormalMatrix pre-scales the normal such that
         // all its components are < 1.0. This prevents the bitangent to exceed the range of fp16
         // in the fragment shader, where we renormalize after interpolation
-        vertex_worldTangent.xyz = objectUniforms.worldFromModelNormalMatrix * vertex_worldTangent.xyz;
+        vertex_worldTangent.xyz = getWorldFromModelNormalMatrix() * vertex_worldTangent.xyz;
         vertex_worldTangent.w = mesh_tangents.w;
-        material.worldNormal = objectUniforms.worldFromModelNormalMatrix * material.worldNormal;
+        material.worldNormal = getWorldFromModelNormalMatrix() * material.worldNormal;
     #else // MATERIAL_NEEDS_TBN
         // Without anisotropy or normal mapping we only need the normal vector
         toTangentFrame(mesh_tangents, material.worldNormal);
 
-        #if defined(HAS_SKINNING_OR_MORPHING)
-            if ((objectUniforms.flags & FILAMENT_OBJECT_SKINNING_ENABLED_BIT) != 0u) {
-                skinNormal(material.worldNormal, mesh_bone_indices, mesh_bone_weights);
-            }
+        #if defined(VARIANT_HAS_SKINNING_OR_MORPHING)
+        if ((getObjectUniforms().flagsChannels & FILAMENT_OBJECT_MORPHING_ENABLED_BIT) != 0u) {
+            #if defined(LEGACY_MORPHING)
+            vec3 normal0, normal1, normal2, normal3;
+            toTangentFrame(mesh_custom4, normal0);
+            toTangentFrame(mesh_custom5, normal1);
+            toTangentFrame(mesh_custom6, normal2);
+            toTangentFrame(mesh_custom7, normal3);
+            vec3 baseNormal = material.worldNormal;
+            material.worldNormal += morphingUniforms.weights[0].xyz * (normal0 - baseNormal);
+            material.worldNormal += morphingUniforms.weights[1].xyz * (normal1 - baseNormal);
+            material.worldNormal += morphingUniforms.weights[2].xyz * (normal2 - baseNormal);
+            material.worldNormal += morphingUniforms.weights[3].xyz * (normal3 - baseNormal);
+            #else
+            morphNormal(material.worldNormal);
+            material.worldNormal = normalize(material.worldNormal);
+            #endif
+        }
+
+        if ((getObjectUniforms().flagsChannels & FILAMENT_OBJECT_SKINNING_ENABLED_BIT) != 0u) {
+            skinNormal(material.worldNormal, mesh_bone_indices, mesh_bone_weights);
+        }
         #endif
 
-        material.worldNormal = objectUniforms.worldFromModelNormalMatrix * material.worldNormal;
+        material.worldNormal = getWorldFromModelNormalMatrix() * material.worldNormal;
 
     #endif // MATERIAL_HAS_ANISOTROPY || MATERIAL_HAS_NORMAL || MATERIAL_HAS_CLEAR_COAT_NORMAL
 #endif // HAS_ATTRIBUTE_TANGENTS
@@ -112,7 +140,7 @@ void main() {
     vertex_worldNormal = material.worldNormal;
 #endif
 
-#if defined(HAS_SHADOWING) && defined(HAS_DIRECTIONAL_LIGHTING)
+#if defined(VARIANT_HAS_SHADOWING) && defined(VARIANT_HAS_DIRECTIONAL_LIGHTING)
     vertex_lightSpacePosition = computeLightSpacePosition(
             vertex_worldPosition.xyz, vertex_worldNormal,
             frameUniforms.lightDirection, frameUniforms.shadowBias, getLightFromWorldMatrix());
@@ -139,7 +167,7 @@ void main() {
     gl_Position.z = gl_Position.z * -0.5 + 0.5;
 #endif
 
-#if defined(HAS_VSM)
+#if defined(VARIANT_HAS_VSM)
     // For VSM, we use the linear light-space Z coordinate as the depth metric, which works for both
     // directional and spot lights and can be safely interpolated.
     // The value is guaranteed to be between [-znear, -zfar] by construction of viewFromWorldMatrix,

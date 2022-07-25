@@ -122,6 +122,7 @@ static bool printMaterial(ostream& text, const ChunkContainer& container) {
     printChunk<bool, bool>(text, container, MaterialColorWrite, "Color write: ");
     printChunk<bool, bool>(text, container, MaterialDepthWrite, "Depth write: ");
     printChunk<bool, bool>(text, container, MaterialDepthTest, "Depth test: ");
+    printChunk<bool, bool>(text, container, MaterialInstanced, "Instanced: ");
     printChunk<bool, bool>(text, container, MaterialDoubleSided, "Double sided: ");
     printChunk<CullingMode, uint8_t>(text, container, MaterialCullingMode, "Culling: ");
     printChunk<TransparencyMode, uint8_t>(text, container, MaterialTransparencyMode, "Transparency: ");
@@ -346,7 +347,7 @@ static void printShaderInfo(ostream& text, const vector<ShaderInfo>& info,
         text << setw(2) << left << toString(item.pipelineStage);
         text << " ";
         text << "0x" << hex << setfill('0') << setw(2)
-             << right << (int) item.variant;
+             << right << +item.variant.key;
         text << setfill(' ') << dec;
         text << "   ";
         text << formatVariantString(item.variant, domain);

@@ -237,7 +237,7 @@ protected:
         size_t count = getComponentCount();
         size_t aliveInARow = 0;
         default_random_engine& rng = mRng;
-        #pragma nounroll
+        UTILS_NOUNROLL
         while (count && aliveInARow < ratio) {
             // note: using the modulo favorizes lower number
             size_t i = rng() % count;
@@ -256,7 +256,7 @@ protected:
 
 private:
     // maps an entity to an instance index
-    tsl::robin_map<Entity, Instance> mInstanceMap;
+    tsl::robin_map<Entity, Instance, Entity::Hasher> mInstanceMap;
     default_random_engine mRng;
 };
 

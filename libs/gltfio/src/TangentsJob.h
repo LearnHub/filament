@@ -18,9 +18,14 @@
 
 #include <math/vec4.h>
 
-namespace filament { class VertexBuffer; }
+namespace filament {
 
-namespace gltfio {
+class VertexBuffer;
+class MorphTargetBuffer;
+
+}
+
+namespace filament::gltfio {
 
 /**
  * Internal helper that examines a cgltf primitive and generates data suitable for Filament's
@@ -41,6 +46,7 @@ struct TangentsJob {
     // a convenience to clients. You can think of this as a scratch space for clients.
     struct Context {
         filament::VertexBuffer* const vb;
+        filament::MorphTargetBuffer* const tb;
         const uint8_t slot;
     };
 
@@ -63,4 +69,4 @@ struct TangentsJob {
     static void run(Params* params);
 };
 
-} // namespace gltfio
+} // namespace filament::gltfio

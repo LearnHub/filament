@@ -14,11 +14,9 @@
  * limitations under the License.
  */
 
-#include <filaflat/BlobDictionary.h>
 #include <filaflat/ChunkContainer.h>
 #include <filaflat/DictionaryReader.h>
 #include <filaflat/MaterialChunk.h>
-#include <filaflat/ShaderBuilder.h>
 #include <filaflat/Unflattener.h>
 
 #include <filament/MaterialChunkType.h>
@@ -226,7 +224,7 @@ const char* toString(backend::SamplerFormat format) noexcept {
 
 // Returns a human-readable variant description.
 // For example: DYN|DIR
-std::string formatVariantString(uint8_t variant, MaterialDomain domain) noexcept;
+std::string formatVariantString(Variant variant, MaterialDomain domain) noexcept;
 
 } // namespace matdbg
 } // namespace filament

@@ -59,6 +59,7 @@ enum class ToneMapping : uint8_t {
 };
 
 using AmbientOcclusionOptions = filament::View::AmbientOcclusionOptions;
+using ScreenSpaceReflectionsOptions = filament::View::ScreenSpaceReflectionsOptions;
 using AntiAliasing = filament::View::AntiAliasing;
 using BloomOptions = filament::View::BloomOptions;
 using DepthOfFieldOptions = filament::View::DepthOfFieldOptions;
@@ -71,6 +72,7 @@ using MultiSampleAntiAliasingOptions = filament::View::MultiSampleAntiAliasingOp
 using TemporalAntiAliasingOptions = filament::View::TemporalAntiAliasingOptions;
 using VignetteOptions = filament::View::VignetteOptions;
 using VsmShadowOptions = filament::View::VsmShadowOptions;
+using GuardBandOptions = filament::View::GuardBandOptions;
 using LightManager = filament::LightManager;
 
 // These functions push all editable property values to their respective Filament objects.
@@ -105,10 +107,9 @@ private:
 };
 
 struct GenericToneMapperSettings {
-    float contrast = 1.585f;
-    float shoulder = 0.5f;
+    float contrast = 1.55f;
     float midGrayIn = 0.18f;
-    float midGrayOut = 0.268f;
+    float midGrayOut = 0.215f;
     float hdrMax = 10.0f;
     bool operator!=(const GenericToneMapperSettings &rhs) const { return !(rhs == *this); }
     bool operator==(const GenericToneMapperSettings &rhs) const;
@@ -161,6 +162,7 @@ struct ViewSettings {
 
     // View Options (sorted)
     AmbientOcclusionOptions ssao;
+    ScreenSpaceReflectionsOptions screenSpaceReflections;
     BloomOptions bloom;
     DepthOfFieldOptions dof;
     DynamicResolutionOptions dsr;
@@ -170,6 +172,7 @@ struct ViewSettings {
     TemporalAntiAliasingOptions taa;
     VignetteOptions vignette;
     VsmShadowOptions vsmShadowOptions;
+    GuardBandOptions guardBand;
 
     // Custom View Options
     ColorGradingSettings colorGrading;
@@ -193,7 +196,7 @@ struct LightSettings {
     LightManager::ShadowOptions shadowOptions;
     SoftShadowOptions softShadowOptions;
     float sunlightIntensity = 100000.0f;
-    math::float3 sunlightDirection = {0.6, -1.0, -0.8};;
+    math::float3 sunlightDirection = {0.6, -1.0, -0.8};
     math::float3 sunlightColor = filament::Color::toLinear<filament::ACCURATE>({ 0.98, 0.92, 0.89});
     float iblIntensity = 30000.0f;
     float iblRotation = 0.0f;
@@ -210,6 +213,7 @@ struct ViewerOptions {
     float cameraFocalLength = 28.0f;
     float cameraFocusDistance = 10.0f;
     bool autoScaleEnabled = true;
+    bool autoInstancingEnabled = false;
 };
 
 struct Settings {

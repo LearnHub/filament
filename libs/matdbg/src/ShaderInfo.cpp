@@ -16,11 +16,9 @@
 
 #include <matdbg/ShaderInfo.h>
 
-#include <filaflat/BlobDictionary.h>
 #include <filaflat/ChunkContainer.h>
 #include <filaflat/DictionaryReader.h>
 #include <filaflat/MaterialChunk.h>
-#include <filaflat/ShaderBuilder.h>
 #include <filaflat/Unflattener.h>
 
 #include <filament/MaterialChunkType.h>
@@ -68,7 +66,7 @@ bool getMetalShaderInfo(ChunkContainer container, ShaderInfo* info) {
 
     for (uint64_t i = 0; i < shaderCount; i++) {
         uint8_t shaderModelValue;
-        uint8_t variantValue;
+        Variant variant;
         uint8_t pipelineStageValue;
         uint32_t offsetValue;
 
@@ -76,7 +74,7 @@ bool getMetalShaderInfo(ChunkContainer container, ShaderInfo* info) {
             return false;
         }
 
-        if (!unflattener.read(&variantValue)) {
+        if (!unflattener.read(&variant)) {
             return false;
         }
 
@@ -90,7 +88,7 @@ bool getMetalShaderInfo(ChunkContainer container, ShaderInfo* info) {
 
         *info++ = {
                 .shaderModel = ShaderModel(shaderModelValue),
-                .variant = variantValue,
+                .variant = variant,
                 .pipelineStage = ShaderType(pipelineStageValue),
                 .offset = offsetValue
         };
@@ -115,7 +113,7 @@ bool getGlShaderInfo(ChunkContainer container, ShaderInfo* info) {
 
     for (uint64_t i = 0; i < shaderCount; i++) {
         uint8_t shaderModelValue;
-        uint8_t variantValue;
+        Variant variant;
         uint8_t pipelineStageValue;
         uint32_t offsetValue;
 
@@ -123,7 +121,7 @@ bool getGlShaderInfo(ChunkContainer container, ShaderInfo* info) {
             return false;
         }
 
-        if (!unflattener.read(&variantValue)) {
+        if (!unflattener.read(&variant)) {
             return false;
         }
 
@@ -137,7 +135,7 @@ bool getGlShaderInfo(ChunkContainer container, ShaderInfo* info) {
 
         *info++ = {
             .shaderModel = ShaderModel(shaderModelValue),
-            .variant = variantValue,
+            .variant = variant,
             .pipelineStage = ShaderType(pipelineStageValue),
             .offset = offsetValue
         };
@@ -161,7 +159,7 @@ bool getVkShaderInfo(ChunkContainer container, ShaderInfo* info) {
 
     for (uint64_t i = 0; i < shaderCount; i++) {
         uint8_t shaderModelValue;
-        uint8_t variantValue;
+        Variant variant;
         uint8_t pipelineStageValue;
         uint32_t dictionaryIndex;
 
@@ -169,7 +167,7 @@ bool getVkShaderInfo(ChunkContainer container, ShaderInfo* info) {
             return false;
         }
 
-        if (!unflattener.read(&variantValue)) {
+        if (!unflattener.read(&variant)) {
             return false;
         }
 
@@ -183,7 +181,7 @@ bool getVkShaderInfo(ChunkContainer container, ShaderInfo* info) {
 
         *info++ = {
             .shaderModel = ShaderModel(shaderModelValue),
-            .variant = variantValue,
+            .variant = variant,
             .pipelineStage = ShaderType(pipelineStageValue),
             .offset = dictionaryIndex
         };

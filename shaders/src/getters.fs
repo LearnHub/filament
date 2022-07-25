@@ -1,3 +1,18 @@
+//------------------------------------------------------------------------------
+// Instance access
+//------------------------------------------------------------------------------
+
+#if defined(MATERIAL_HAS_INSTANCES)
+/** @public-api */
+int getInstanceIndex() {
+    return instance_index;
+}
+#endif
+
+//------------------------------------------------------------------------------
+// Attributes access
+//------------------------------------------------------------------------------
+
 #if defined(HAS_ATTRIBUTE_COLOR)
 /** @public-api */
 vec4 getColor() {
@@ -62,26 +77,6 @@ float getNdotV() {
 }
 
 /**
- * Transforms a texture UV to make it suitable for a render target attachment.
- *
- * In Vulkan and Metal, texture coords are Y-down but in OpenGL they are Y-up. This wrapper function
- * accounts for these differences. When sampling from non-render targets (i.e. uploaded textures)
- * these differences do not matter because OpenGL has a second piece of backwardness, which is that
- * the first row of texels in glTexImage2D is interpreted as the bottom row.
- *
- * To protect users from these differences, we recommend that materials in the SURFACE domain
- * leverage this wrapper function when sampling from offscreen render targets.
- *
- * @public-api
- */
-highp vec2 uvToRenderTargetUV(highp vec2 uv) {
-#if defined(TARGET_METAL_ENVIRONMENT) || defined(TARGET_VULKAN_ENVIRONMENT)
-    uv.y = 1.0 - uv.y;
-#endif
-    return uv;
-}
-
-/**
  * Returns the normalized [0, 1] viewport coordinates with the origin at the viewport's bottom-left.
  * Z coordinate is in the [0, 1] range as well.
  *
@@ -98,7 +93,7 @@ highp vec3 getNormalizedViewportCoord2() {
     return vec3(shading_normalizedViewportCoord, gl_FragCoord.z);
 }
 
-#if defined(HAS_SHADOWING) && defined(HAS_DYNAMIC_LIGHTING)
+#if defined(VARIANT_HAS_SHADOWING) && defined(VARIANT_HAS_DYNAMIC_LIGHTING)
 highp vec4 getSpotLightSpacePosition(uint index, highp float zLight) {
     highp mat4 lightFromWorldMatrix = shadowUniforms.shadows[index].lightFromWorldMatrix;
     highp vec3 dir = shadowUniforms.shadows[index].direction;
@@ -127,7 +122,7 @@ uint getShadowCascade() {
     return clamp(uint(dot(vec4(greaterZ), vec4(1.0))), 0u, cascadeCount - 1u);
 }
 
-#if defined(HAS_SHADOWING) && defined(HAS_DIRECTIONAL_LIGHTING)
+#if defined(VARIANT_HAS_SHADOWING) && defined(VARIANT_HAS_DIRECTIONAL_LIGHTING)
 
 highp vec4 getCascadeLightSpacePosition(uint cascade) {
     // For the first cascade, return the interpolated light space position.
@@ -144,3 +139,13 @@ highp vec4 getCascadeLightSpacePosition(uint cascade) {
 }
 
 #endif
+
+PerRenderableData getObjectUniforms() {
+#if defined(MATERIAL_HAS_INSTANCES)
+    // the material manages instancing, all instances share the same uniform block.
+    return objectUniforms.data[0];
+#else
+     // automatic instancing was used, each instance has its own uniform block.
+    return objectUniforms.data[instance_index];
+#endif
+}

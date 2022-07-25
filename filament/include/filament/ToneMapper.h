@@ -123,8 +123,6 @@ struct UTILS_PUBLIC FilmicToneMapper final : public ToneMapper {
  *
  * The tone mapping curve is defined by 5 parameters:
  * - contrast: controls the contrast of the curve
- * - shoulder: controls the shoulder of the curve, i.e. how quickly scene
- *             referred values map to output white
  * - midGrayIn: sets the input middle gray
  * - midGrayOut: sets the output middle gray
  * - hdrMax: defines the maximum input value that will be mapped to
@@ -136,20 +134,17 @@ struct UTILS_PUBLIC GenericToneMapper final : public ToneMapper {
      * constructor parameters approximate an ACES tone mapping curve
      * and the maximum input value is set to 10.0.
      *
-     * @param contrast: controls the contrast of the curve, must be > 0.0, values
-     *                  in the range 0.5..2.0 are recommended.
-     * @param shoulder: controls the shoulder of the curve, i.e. how quickly scene
-     *                  referred values map to output white, between 0.0 and 1.0.
-     * @param midGrayIn: sets the input middle gray, between 0.0 and 1.0.
-     * @param midGrayOut: sets the output middle gray, between 0.0 and 1.0.
-     * @param hdrMax: defines the maximum input value that will be mapped to
-     *                output white. Must be >= 1.0.
+     * @param contrast controls the contrast of the curve, must be > 0.0, values
+     *                 in the range 0.5..2.0 are recommended.
+     * @param midGrayIn sets the input middle gray, between 0.0 and 1.0.
+     * @param midGrayOut sets the output middle gray, between 0.0 and 1.0.
+     * @param hdrMax defines the maximum input value that will be mapped to
+     *               output white. Must be >= 1.0.
      */
     explicit GenericToneMapper(
-            float contrast = 1.585f,
-            float shoulder = 0.5f,
+            float contrast = 1.55f,
             float midGrayIn = 0.18f,
-            float midGrayOut = 0.268f,
+            float midGrayOut = 0.215f,
             float hdrMax = 10.0f
     ) noexcept;
     ~GenericToneMapper() noexcept final;
@@ -178,9 +173,6 @@ struct UTILS_PUBLIC GenericToneMapper final : public ToneMapper {
 
     /** Sets the contrast of the curve, must be > 0.0, values in the range 0.5..2.0 are recommended. */
     void setContrast(float contrast) noexcept;
-
-    /** Sets how quickly scene referred values map to output white, between 0.0 and 1.0. */
-    void setShoulder(float shoulder) noexcept;
 
     /** Sets the input middle gray, between 0.0 and 1.0. */
     void setMidGrayIn(float midGrayIn) noexcept;

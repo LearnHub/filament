@@ -7,17 +7,16 @@ material {
             precision: medium
         },
         {
-            type : float4,
-            name : resolution,
-            precision: high
-        },
-        {
             type : float2,
             name : axis
         },
         {
             type : float,
             name : level
+        },
+        {
+            type : float,
+            name : layer
         },
         {
             type : int,
@@ -48,6 +47,7 @@ fragment {
 
 #define BLUR_TYPE    vec2
 #define BLUR_SWIZZLE rg
+#define TEXTURE_LOD(s, p, m, l) textureLod(s, p, m)
 
 #include "separableGaussianBlur.fs"
 
