@@ -303,7 +303,7 @@ void FRenderer::endFrame() {
         mSwapChain = nullptr;
     }
 
-    driver.endFrame(mFrameId, nullptr, nullptr);
+    driver.endFrame(mFrameId, mFrameCompletedCallback, mFrameCompletedCallbackData);
 
     // gives the backend a chance to execute periodic tasks
     driver.tick();
