@@ -518,7 +518,9 @@
 #  include <float.h>
 
 #  if (defined(__MWERKS__) && defined(macintosh)) || defined(applec) || \
-    defined(THINK_C) || defined(__SC__) || defined(TARGET_OS_MAC)
+    defined(THINK_C) || defined(__SC__)
+   /* AVN: dropped `|| defined(TARGET_OS_MAC)` — it is defined on all modern macOS SDKs and
+    * wrongly pulled in the classic Mac OS <fp.h> header (which no longer exists). */
    /* We need to check that <math.h> hasn't already been included earlier
     * as it seems it doesn't agree with <fp.h>, yet we should really use
     * <fp.h> if possible.
