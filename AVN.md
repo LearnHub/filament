@@ -12,9 +12,36 @@ on the host. Environments (HDR cube maps for skyboxes) are compiled independentl
 
 ## Branches
 
-**`main-prod`** — the active AVN production branch.<br>
-**`main-base`** — the last upstream branch we merged from, kept for reference.<br>
+`origin` is the AVN fork (`https://github.com/LearnHub/filament`). Upstream is Google's Filament
+(`https://github.com/google/filament`); add it as a remote named `upstream` to pull new changes:
+
+```sh
+git remote add upstream https://github.com/google/filament.git
+```
+
+**`main`** — a clean mirror of upstream `main`, carrying no AVN commits.<br>
+**`main-prod`** — the active AVN production branch; all fork changes live here.<br>
+**`main-base`** — a *pinned* snapshot of upstream at the last point merged into `main-prod`, kept as the
+baseline for `git diff origin/main-base..main-prod` (see
+[Functional differences from upstream](#functional-differences-from-upstream)).<br>
+**`master`** — stale mirror of upstream's old `master` (pre `master`→`main` rename); not used.<br>
 **`production`** — old; contains a previous attempt at a post-frame callback. Do not use.
+
+### Updating from upstream
+
+Refresh `main` from upstream — a fast-forward, since `main` carries no fork commits — then push it to
+the fork (run while **not** checked out on `main`):
+
+```sh
+git fetch upstream main
+git branch -f main upstream/main
+git push origin main
+```
+
+Bringing upstream into production is a separate, conflict-prone step: merge `main` (or a release
+snapshot) into `main-prod`, resolve conflicts against the documented fork changes, then advance
+`main-base` to the new merge point so the diff baseline stays accurate. Do **not** move `main-base` at
+any other time.
 
 ## Prerequisites
 
