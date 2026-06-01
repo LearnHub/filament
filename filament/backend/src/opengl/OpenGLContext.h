@@ -205,6 +205,13 @@ public:
         // view that this is generally forbidden. However, this restriction is lifted on desktop
         // GL and Vulkan and probably Metal.
         bool allow_read_only_ancillary_feedback_loop = false;
+
+        // The Mali-T760 (rk3288, r11p0) driver over-reads the source buffer in glTexSubImage2D:
+        // a vectorized copy reads a few bytes past the end, and for 3-component GL_RGB uploads it
+        // reads a full extra channel. It SIGSEGVs when the buffer ends exactly on a page boundary
+        // (otherwise it silently reads adjacent memory). Work around it by uploading from an
+        // over-allocated copy so the over-read always lands in mapped memory.
+        bool texture_upload_source_overrun = false;
     } bugs;
 
     // state getters -- as needed.
@@ -256,6 +263,9 @@ private:
                     ""},
             {   bugs.allow_read_only_ancillary_feedback_loop,
                     "allow_read_only_ancillary_feedback_loop",
+                    ""},
+            {   bugs.texture_upload_source_overrun,
+                    "texture_upload_source_overrun",
                     ""},
     }};
 

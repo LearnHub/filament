@@ -34,6 +34,11 @@
 #include <emscripten.h>
 #endif
 
+#if defined(__ANDROID__)
+#include <sys/mman.h>   // mincore: probe whether a source buffer's trailing pages are mapped
+#include <unistd.h>     // sysconf(_SC_PAGESIZE)
+#endif
+
 // We can only support this feature on OpenGL ES 3.1+
 // Support is currently disabled as we don't need it
 #define TEXTURE_2D_MULTISAMPLE_SUPPORTED false
@@ -1895,6 +1900,54 @@ void OpenGLDriver::setTextureData(GLTexture* t,
     GLenum glFormat = getFormat(p.format);
     GLenum glType = getType(p.type);
 
+    // Mali-T760 (rk3288, r11p0) over-reads the source buffer during the glTexSubImage upload: a
+    // vectorized copy reads a few bytes past the end, and for 3-component GL_RGB uploads it reads a
+    // full extra channel (4/3x). It only SIGSEGVs when those trailing bytes fall in an unmapped page
+    // (hence the intermittent crashes). The over-read is bounded by kOverreadSlack. We probe the
+    // pages spanning that trailing region with mincore(): when they are already mapped — the common
+    // case, since the allocator usually leaves slack, which is why even the large wallpaper upload
+    // never faulted — we upload directly and let the over-read read harmless garbage. Only when the
+    // page past the data is genuinely unmapped do we copy into an over-allocated staging buffer so
+    // the over-read lands in mapped slack. This stages just the rare dangerous upload rather than
+    // copying every texture (the wallpaper alone is 32 MB). See bugs.texture_upload_source_overrun.
+    constexpr size_t kOverreadSlack = 4096;
+    std::unique_ptr<uint8_t[]> overrunStaging;
+    void const* uploadBuffer = p.buffer;
+    if (UTILS_UNLIKELY(gl.bugs.texture_upload_source_overrun &&
+            p.buffer && p.type != PixelDataType::COMPRESSED && p.size > 0)) {
+        bool tailMapped = false;
+#if defined(__ANDROID__)
+        const size_t pageSize = size_t(sysconf(_SC_PAGESIZE));
+        const uintptr_t end = reinterpret_cast<uintptr_t>(p.buffer) + p.size;
+        const uintptr_t pageStart = end & ~(uintptr_t(pageSize) - 1);
+        const size_t checkLen = size_t(end - pageStart) + kOverreadSlack;
+        const size_t numPages = (checkLen + pageSize - 1) / pageSize;
+        // mincore() returns 0 only when every page in the range is mapped (resident or not — a
+        // mapped-but-paged-out page faults in, it doesn't SIGSEGV); it fails with ENOMEM if any
+        // page is unmapped, which is exactly the unsafe case that needs staging.
+        unsigned char vec[16];
+        if (numPages <= sizeof(vec)) {
+            tailMapped = mincore(reinterpret_cast<void*>(pageStart), checkLen, vec) == 0;
+        }
+#endif
+        if (!tailMapped) {
+            const bool threeComponent =
+                    (p.format == PixelDataFormat::RGB || p.format == PixelDataFormat::RGB_INTEGER);
+            // headroom: worst case the driver reads 4 components from a 3-component buffer (+size/3),
+            // plus a page of slack so the small alignment over-read can never reach unmapped memory.
+            const size_t paddedSize = p.size + (threeComponent ? p.size / 3 : 0) + kOverreadSlack;
+            overrunStaging.reset(new uint8_t[paddedSize]);
+            // The device's libc memcpy uses NEON vector loads that read past the end of the source
+            // (the very bug we're avoiding), so copying p.buffer with memcpy faults when p.buffer
+            // ends near an unmapped page. Copy with scalar volatile byte accesses, which never read
+            // past the requested byte and which the compiler can't fold back into a memcpy.
+            volatile uint8_t* vdst = overrunStaging.get();
+            volatile uint8_t const* vsrc = static_cast<uint8_t const*>(p.buffer);
+            for (size_t i = 0; i < p.size; ++i) { vdst[i] = vsrc[i]; }
+            uploadBuffer = overrunStaging.get();
+        }
+    }
+
     gl.pixelStore(GL_UNPACK_ROW_LENGTH, p.stride);
     gl.pixelStore(GL_UNPACK_ALIGNMENT, p.alignment);
     gl.pixelStore(GL_UNPACK_SKIP_PIXELS, p.left);
@@ -1912,7 +1965,7 @@ void OpenGLDriver::setTextureData(GLTexture* t,
             assert_invariant(t->gl.target == GL_TEXTURE_2D);
             glTexSubImage2D(t->gl.target, GLint(level),
                     GLint(xoffset), GLint(yoffset),
-                    width, height, glFormat, glType, p.buffer);
+                    width, height, glFormat, glType, uploadBuffer);
             break;
         case SamplerType::SAMPLER_3D:
             assert_invariant(zoffset + depth <= std::max(1u, t->depth >> level));
@@ -1921,7 +1974,7 @@ void OpenGLDriver::setTextureData(GLTexture* t,
             assert_invariant(t->gl.target == GL_TEXTURE_3D);
             glTexSubImage3D(t->gl.target, GLint(level),
                     GLint(xoffset), GLint(yoffset), GLint(zoffset),
-                    width, height, depth, glFormat, glType, p.buffer);
+                    width, height, depth, glFormat, glType, uploadBuffer);
             break;
         case SamplerType::SAMPLER_2D_ARRAY:
             assert_invariant(zoffset + depth <= t->depth);
@@ -1931,7 +1984,7 @@ void OpenGLDriver::setTextureData(GLTexture* t,
             assert_invariant(t->gl.target == GL_TEXTURE_2D_ARRAY);
             glTexSubImage3D(t->gl.target, GLint(level),
                     GLint(xoffset), GLint(yoffset), GLint(zoffset),
-                    width, height, depth, glFormat, glType, p.buffer);
+                    width, height, depth, glFormat, glType, uploadBuffer);
             break;
         case SamplerType::SAMPLER_CUBEMAP: {
             assert_invariant(t->gl.target == GL_TEXTURE_CUBE_MAP);
@@ -1943,7 +1996,7 @@ void OpenGLDriver::setTextureData(GLTexture* t,
                 GLenum target = getCubemapTarget(face);
                 glTexSubImage2D(target, GLint(level), 0, 0,
                         width, height, glFormat, glType,
-                        static_cast<uint8_t const*>(p.buffer) + offsets[face]);
+                        static_cast<uint8_t const*>(uploadBuffer) + offsets[face]);
             }
             break;
         }

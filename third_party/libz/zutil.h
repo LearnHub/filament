@@ -130,7 +130,9 @@ extern z_const char * const z_errmsg[10]; /* indexed by 2-zlib_error */
 #  endif
 #endif
 
-#if defined(MACOS) || defined(TARGET_OS_MAC)
+#if defined(MACOS)
+/* AVN: dropped `|| defined(TARGET_OS_MAC)` — it is defined on all modern macOS SDKs and wrongly
+ * took the classic Mac OS branch, which `#define`s fdopen as a macro and breaks <stdio.h>. */
 #  define OS_CODE  7
 #  ifndef Z_SOLO
 #    if defined(__MWERKS__) && __dest_os != __be_os && __dest_os != __win32_os

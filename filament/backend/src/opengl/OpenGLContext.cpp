@@ -128,6 +128,8 @@ OpenGLContext::OpenGLContext() noexcept {
                 bugs.texture_external_needs_rebind = true;
                 // We have not verified that timer queries work on Mali-T, so we disable to be safe.
                 bugs.dont_use_timer_query = true;
+                // glTexSubImage2D over-reads the source buffer on these drivers (see flag comment).
+                bugs.texture_upload_source_overrun = true;
             }
             if (strstr(state.renderer, "Mali-G")) {
                 // assume we don't have working timer queries

@@ -206,6 +206,20 @@ subprojects {
                 }
             }
 
+            // Keep the native symbol table in DEBUG .so files so crashes/tombstones can be
+            // symbolicated with addr2line (AGP strips JNI libs by default for every variant).
+            // Release stays stripped so the shipped aar is lean. build.sh runs debug and release
+            // as separate Gradle invocations, so gate on the requested task names.
+            def keepNativeSymbols = gradle.startParameter.taskNames.isEmpty() ||
+                    !gradle.startParameter.taskNames.any { it.toLowerCase().contains("release") }
+            if (keepNativeSymbols) {
+                packagingOptions {
+                    jniLibs {
+                        keepDebugSymbols += "**/*.so"
+                    }
+                }
+            }
+
             compileOptions {
                 sourceCompatibility JavaVersion.VERSION_1_8
                 targetCompatibility JavaVersion.VERSION_1_8
