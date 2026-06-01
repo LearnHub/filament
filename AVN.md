@@ -84,3 +84,103 @@ That script copies the `filament`, `filamat`, `filament-utils`, and `gltfio-andr
   ```sh
   ./gradlew assembleDebug
   ```
+
+## Functional differences from upstream
+
+The list below is the **net** difference between `main-prod` and `main-base` (the last upstream
+snapshot we merged from), captured 2026-06-01 with `main-prod` at `227442b0a`. It is intended as a
+checklist for deciding which fork changes are still required once we move to the latest upstream
+Filament. Regenerate with:
+
+```sh
+git diff --stat origin/main-base..main-prod
+```
+
+### 1. Renderer-level frame-completed callback
+
+Adds an asynchronous "frame done" callback. New `Renderer::setFrameCallback(callback, destroyCallback,
+user)` (C++) and `Renderer.setFrameCallback(handler, runnable)` (Java); the backend `endFrame()`
+signature gains a callback + user pointer, and the GL backend runs a dedicated fence-wait thread that
+fires the callback once the frame's fence signals. Replaces an earlier post-frame callback that
+created excessive JNI global references.
+
+**Why / client use:** `FXRRenderSystem.kt` (avn.graphics.fframe) and `OXRRenderSystem.kt`
+(avn.platform.oxr) call `renderer.setFrameCallback(frameCallbackExecutor) { … }` to run work after
+each frame completes (OpenXR frame submit / eye-buffer handoff).<br>
+**Scope:** GL backend only — Metal/Vulkan/Noop accept the new `endFrame` args and ignore them.<br>
+**Files:** `filament/include/filament/Renderer.h`, `filament/src/Renderer.cpp`,
+`filament/src/details/Renderer.{h,cpp}`, `filament/backend/include/private/backend/DriverAPI.inc`,
+`filament/backend/src/Driver.cpp`, `filament/backend/src/{opengl/OpenGLDriver.{h,cpp},
+metal/MetalDriver.mm, noop/NoopDriver.cpp, vulkan/VulkanDriver.cpp}`, `android/common/CallbackUtils.{h,cpp}`,
+`android/filament-android/.../cpp/Renderer.cpp`, `.../java/.../Renderer.java`, plus 10 backend
+`test_*.cpp` files (mechanical `endFrame(0)` → `endFrame(0, nullptr, nullptr)` updates).<br>
+**Upstream check:** upstream has its own frame-completed mechanism (`setFrameCompletedCallback` on the
+SwapChain) — verify whether that can replace this before dropping the fork code.
+
+### 2. RenderTarget MSAA `samples()`
+
+Adds `RenderTarget::Builder::samples(n)` (C++/Java/JNI) so an offscreen `RenderTarget` can request
+MSAA on mobile.
+
+**Why / client use:** `FSwapChain.kt` builds each eye target with `.samples(headset.mssaSamples)`.<br>
+**Files:** `filament/include/filament/RenderTarget.h`, `filament/src/details/RenderTarget.cpp`,
+`android/filament-android/.../cpp/RenderTarget.cpp`, `.../java/.../RenderTarget.java`.<br>
+**Upstream check:** confirm whether current upstream `RenderTarget` already exposes a sample count.
+
+### 3. Simplified exponential fog (three.js `FogExp2`)
+
+Rewrites `shaders/src/fog.fs` to `exp2(-density² · dist²)`, mixing the fog colour by distance only,
+and pre-squares density in `PerViewUniforms.cpp`. **Drops** Filament's height fog, height falloff, sun
+in-scattering, IBL-derived fog colour and max-opacity.
+
+**Why / client use:** `FogComponent.kt` and the render systems set `View.FogOptions`. With this fork
+only `density` and `color` affect the result — `heightFalloff` (and the other `FogOptions` fields) are
+inert despite still being set by the client.<br>
+**Files:** `shaders/src/fog.fs`, `filament/src/PerViewUniforms.cpp`.<br>
+**Upstream check:** dropping the fork restores full upstream fog, which **changes fog appearance** and
+re-activates `heightFalloff`/in-scattering/etc. Decide whether the simplified look is still wanted.
+
+### 4. Mali-T `glTexSubImage` source over-read workaround (CVR1)
+
+Adds an OpenGL bug flag `texture_upload_source_overrun` (set for Mali-T) and, in
+`OpenGLDriver::setTextureData`, probes the source buffer's trailing page with `mincore()`; only when
+that page is unmapped does it upload from an over-allocated staging copy. Works around a Mali-T
+(rk3288, r11p0) driver that over-reads the upload source and intermittently SIGSEGVs.
+
+**Why / client use:** protects texture uploads on legacy Mali-T ClassVR headsets.<br>
+**Files:** `filament/backend/src/opengl/OpenGLContext.{h,cpp}`, `filament/backend/src/opengl/OpenGLDriver.cpp`.<br>
+**Upstream check:** still required as long as legacy Mali-T devices are supported; not an upstream concern.
+
+### 5. Build — keep native debug symbols (Android)
+
+`android/build.gradle` keeps `**/*.so` debug symbols for non-release variants so tombstones can be
+symbolicated with `addr2line`; release variants stay stripped.
+
+**Files:** `android/build.gradle`.<br>
+**Upstream check:** local build-tooling preference; carry forward regardless of upstream version.
+
+### 6. Build — libpng/libz fix for modern macOS SDK
+
+Drops `|| defined(TARGET_OS_MAC)` from the classic-Mac branch in `third_party/libpng/pngpriv.h` and
+`third_party/libz/zutil.h` (it pulled in the long-gone classic Mac `<fp.h>` / `fdopen` macro) so the
+host tools compile on current macOS SDKs.
+
+**Files:** `third_party/libpng/pngpriv.h`, `third_party/libz/zutil.h`.<br>
+**Upstream check:** re-apply if upstream still vendors these third-party copies; may be fixed upstream.
+
+### Already absorbed by upstream / reverted (no longer fork differences)
+
+These were present earlier on the branch but net out to zero against `main-base` — useful to know so
+they are not re-introduced during the upstream move:
+
+- **`Texture.Builder.importTexture`** (was `importShared`) — now native upstream; client `FSwapChain.kt`
+  uses it.
+- **ASTC texture enum additions** (`Texture.java`) — now upstream.
+- **Morph-target normal contribution** (`shaders/src/main.vs`) — temporary disable reverted after
+  upstream added support.
+- **Temporary bound-count limit** (`EngineEnums.h`), an **uninitialized-pointer** tweak
+  (`details/Renderer.h`), and profiling **"hacks"** (`Camera.java`, `TransformManager.java`) —
+  overwritten/reverted by later upstream merges.
+- **Color-grading disable** — disabled then undone within the branch.
+- **filament-utils-android runtime-load-failure packaging option** — dropped in a later merge; only a
+  trailing-newline change remains in `android/filament-utils-android/build.gradle`.
