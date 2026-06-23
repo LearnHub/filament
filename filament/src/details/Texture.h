@@ -39,6 +39,10 @@ public:
 
     backend::Handle<backend::HwTexture> getHwHandle() const noexcept { return mHandle; }
 
+    // Backend GL texture name (OpenGL backend only; 0 otherwise). Resolved synchronously via the
+    // driver — only valid once the texture has been realized.
+    uint32_t getId(FEngine& engine) const noexcept;
+
     size_t getWidth(size_t level = 0) const noexcept;
     size_t getHeight(size_t level = 0) const noexcept;
     size_t getDepth(size_t level = 0) const noexcept;

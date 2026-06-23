@@ -283,6 +283,15 @@ public:
     Sampler getTarget() const noexcept;
 
     /**
+     * Returns the backend texture object name — the OpenGL texture id — for this texture, or 0 on
+     * non-OpenGL backends. Resolved synchronously via the backend, so only call once the texture has
+     * been realized (e.g. after it has been used in a frame). Intended for interop with raw GL code.
+     * @param engine the Engine that created this Texture
+     * @return the OpenGL texture id, or 0
+     */
+    uint32_t getId(Engine& engine) const noexcept;
+
+    /**
      * Return this texture InternalFormat as set by Builder::format().
      * @return this texture InternalFormat as set by Builder::format().
      */

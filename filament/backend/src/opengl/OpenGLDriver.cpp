@@ -1487,6 +1487,10 @@ FenceStatus OpenGLDriver::wait(Handle<HwFence> fh, uint64_t timeout) {
     return FenceStatus::ERROR;
 }
 
+uint32_t OpenGLDriver::getTextureGlId(Handle<HwTexture> th) {
+    return handle_cast<GLTexture*>(th)->gl.id;
+}
+
 bool OpenGLDriver::isTextureFormatSupported(TextureFormat format) {
     const auto& ext = mContext.ext;
     if (isETC2Compression(format)) {

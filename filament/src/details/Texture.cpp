@@ -397,6 +397,10 @@ void FTexture::setExternalStream(FEngine& engine, FStream* stream) noexcept {
     }
 }
 
+uint32_t FTexture::getId(FEngine& engine) const noexcept {
+    return engine.getDriverApi().getTextureGlId(mHandle);
+}
+
 void FTexture::generateMipmaps(FEngine& engine) const noexcept {
     if (!ASSERT_POSTCONDITION_NON_FATAL(mTarget != SamplerType::SAMPLER_EXTERNAL,
             "External Textures are not mipmappable.")) {

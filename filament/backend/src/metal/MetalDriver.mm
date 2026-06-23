@@ -593,6 +593,10 @@ FenceStatus MetalDriver::wait(Handle<HwFence> fh, uint64_t timeout) {
     return fence->wait(timeout);
 }
 
+uint32_t MetalDriver::getTextureGlId(Handle<HwTexture>) {
+    return 0; // not an OpenGL backend
+}
+
 bool MetalDriver::isTextureFormatSupported(TextureFormat format) {
     return MetalTexture::decidePixelFormat(mContext, format) != MTLPixelFormatInvalid;
 }

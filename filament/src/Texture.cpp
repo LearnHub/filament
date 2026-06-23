@@ -41,6 +41,10 @@ Texture::Sampler Texture::getTarget() const noexcept {
     return upcast(this)->getTarget();
 }
 
+uint32_t Texture::getId(Engine& engine) const noexcept {
+    return upcast(this)->getId(upcast(engine));
+}
+
 Texture::InternalFormat Texture::getFormat() const noexcept {
     return upcast(this)->getFormat();
 }

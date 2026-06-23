@@ -874,6 +874,15 @@ public class Texture {
     }
 
     /**
+     * @return the backend texture object name (the OpenGL texture id), or 0 on non-OpenGL backends.
+     *         Resolved synchronously via the backend, so only valid once the texture has been
+     *         realized (e.g. after it has been used in a frame). Intended for raw-GL interop.
+     */
+    public int getId(@NonNull Engine engine) {
+        return nGetId(getNativeObject(), engine.getNativeObject());
+    }
+
+    /**
      * @return This texture's {@link InternalFormat InternalFormat}.
      */
     @NonNull
@@ -1256,6 +1265,7 @@ public class Texture {
     private static native int nGetDepth(long nativeTexture, int level);
     private static native int nGetLevels(long nativeTexture);
     private static native int nGetTarget(long nativeTexture);
+    private static native int nGetId(long nativeTexture, long nativeEngine);
     private static native int nGetInternalFormat(long nativeTexture);
 
     private static native int nSetImage(long nativeTexture, long nativeEngine,

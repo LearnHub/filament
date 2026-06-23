@@ -182,6 +182,14 @@ Java_com_google_android_filament_Texture_nGetTarget(JNIEnv*, jclass, jlong nativ
 }
 
 extern "C" JNIEXPORT jint JNICALL
+Java_com_google_android_filament_Texture_nGetId(JNIEnv*, jclass, jlong nativeTexture,
+        jlong nativeEngine) {
+    Texture *texture = (Texture *) nativeTexture;
+    Engine *engine = (Engine *) nativeEngine;
+    return (jint) texture->getId(*engine);
+}
+
+extern "C" JNIEXPORT jint JNICALL
 Java_com_google_android_filament_Texture_nGetInternalFormat(JNIEnv*, jclass,
         jlong nativeTexture) {
     Texture *texture = (Texture *) nativeTexture;

@@ -801,6 +801,10 @@ FenceStatus VulkanDriver::wait(Handle<HwFence> fh, uint64_t timeout) {
     return result == VK_SUCCESS ? FenceStatus::CONDITION_SATISFIED : FenceStatus::TIMEOUT_EXPIRED;
 }
 
+uint32_t VulkanDriver::getTextureGlId(Handle<HwTexture>) {
+    return 0; // not an OpenGL backend
+}
+
 // We create all textures using VK_IMAGE_TILING_OPTIMAL, so our definition of "supported" is that
 // the GPU supports the given texture format with non-zero optimal tiling features.
 bool VulkanDriver::isTextureFormatSupported(TextureFormat format) {
