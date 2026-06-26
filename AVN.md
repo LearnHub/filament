@@ -141,8 +141,29 @@ each frame completes (OpenXR frame submit / eye-buffer handoff).<br>
 metal/MetalDriver.mm, noop/NoopDriver.cpp, vulkan/VulkanDriver.cpp}`, `android/common/CallbackUtils.{h,cpp}`,
 `android/filament-android/.../cpp/Renderer.cpp`, `.../java/.../Renderer.java`, plus 10 backend
 `test_*.cpp` files (mechanical `endFrame(0)` → `endFrame(0, nullptr, nullptr)` updates).<br>
-**Upstream check:** upstream has its own frame-completed mechanism (`setFrameCompletedCallback` on the
-SwapChain) — verify whether that can replace this before dropping the fork code.
+**Upstream check (explored 2026-06-01 against `upstream/main`):** Upstream now provides
+`SwapChain::setFrameCompletedCallback(CallbackHandler*, FrameCompletedCallback&&)`, exposed in Java as
+`SwapChain.setFrameCompletedCallback(Object handler, Runnable callback)` — the same shape and semantics
+as this fork's `Renderer.setFrameCallback` (fire per frame on GPU completion, dispatched via a handler/
+executor). **But only the Metal backend implements it** — `OpenGLDriver::setFrameCompletedCallback` is
+an empty stub, and the header states *"Other backends ignore the callback (which will never be
+called)."* Since ClassVR runs GLES on Mali, upstream's callback never fires, so this fork change is
+**still required** — but should be re-implemented on upstream's plumbing rather than carried forward
+as-is:
+
+- Implement the empty GL stub `OpenGLDriver::setFrameCompletedCallback` with this fork's existing
+  fence-wait-thread logic (`mCallbackThread` / `mCallbackFenceQueue` / `createFence`+`waitFence`+
+  `destroyFence`) — the relocated hard part, not new code.
+- Switch the client from `renderer.setFrameCallback(executor){…}` to
+  `swapChain.setFrameCompletedCallback(executor){…}`; both render systems already hold a Filament
+  `SwapChain`, and the Java signature matches.
+- This lets us drop the `Renderer`-level API, the `endFrame()` signature change, the `CallbackUtils`
+  hacks and the 10 test edits, replacing them with upstream's maintained JNI / `CallbackHandler` path —
+  shrinking this difference to a single GL backend function body.
+
+Verify on port: the FXR path's 1×1 headless swapchain still fires the per-frame callback (it is latched
+at `endFrame()`); and the JNI global-ref lifecycle is handled by upstream's `JniCallback` /
+`postToJavaAndDestroy` (the leak this fork's `destroyCallback` was added to fix).
 
 ### 2. RenderTarget MSAA `samples()`
 
