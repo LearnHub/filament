@@ -1322,6 +1322,12 @@ void OpenGLDriver::destroyTexture(Handle<HwTexture> th) {
             if (t->gl.sidecarRenderBufferMS) {
                 glDeleteRenderbuffers(1, &t->gl.sidecarRenderBufferMS);
             }
+        } else if (any(t->usage & TextureUsage::SAMPLEABLE)) {
+            // AVN: an imported id is not ours to delete, but our record of where it is bound must
+            // go with the texture. Its owner deletes the id and GL reissues it; left in the record,
+            // the next texture to get that id is taken for already bound and never bound, and its
+            // draws sample the old object, which GL keeps for as long as it stays bound here.
+            mContext.unbindTexture(t->gl.target, t->gl.id);
         }
         destruct(th, t);
     }

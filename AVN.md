@@ -216,6 +216,20 @@ host tools compile on current macOS SDKs.
 **Files:** `third_party/libpng/pngpriv.h`, `third_party/libz/zutil.h`.<br>
 **Upstream check:** re-apply if upstream still vendors these third-party copies; may be fixed upstream.
 
+### 7. Destroying an imported texture clears its bindings (OpenGL)
+
+`OpenGLDriver::destroyTexture` skipped everything for an imported texture, including `unbindTexture`,
+so the driver's record of bound textures kept the id. The id's owner then deletes it, GL reissues it to
+the next texture, and that texture is taken for already bound and never bound: its draws sample the
+old object, which GL keeps alive while it stays bound. The fork now unbinds an imported texture when
+it is destroyed; it still does not delete the id.
+
+**Why / client use:** a 360/180 video's texture belongs to the FXR reprojector and is imported
+(`VideoMediaSystem.kt`). Without this, a flat video played straight after a 360 video showed the 360
+video's last frame on its screen (seen 2026-11-25 on CVR255-64).<br>
+**Files:** `filament/backend/src/opengl/OpenGLDriver.cpp`.<br>
+**Upstream check:** see whether upstream's `destroyTexture` unbinds imported textures; if so, drop this.
+
 ### Already absorbed by upstream / reverted (no longer fork differences)
 
 These were present earlier on the branch but net out to zero against `main-base` — useful to know so
